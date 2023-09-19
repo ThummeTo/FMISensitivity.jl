@@ -43,8 +43,7 @@ function ChainRulesCore.frule(Δtuple,
     p_refs, 
     t)
 
-    Δtuple = undual(Δtuple)
-    Δself, ΔcRef, Δdx, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δt = Δtuple
+    Δself, ΔcRef, Δdx, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δt = undual(Δtuple)
 
     ### ToDo: Somehow, ForwardDiff enters with all types beeing Float64, this needs to be corrected.
 
@@ -56,7 +55,6 @@ function ChainRulesCore.frule(Δtuple,
     t = undual(t)
     u = undual(u)
     x = undual(x)
-
     p = undual(p)
     
     y_refs = undual(y_refs)
@@ -229,14 +227,6 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
     Ω = eval!(cRef, dx, y, y_refs, x, u, u_refs, p, p_refs, t)
 
-    # if !inputs
-    #     Ω = eval!(cRef, dx, y, y_refs, x, t)
-    # elseif !states
-    #     Ω = eval!(cRef, dx, y, y_refs, u, u_refs, t)
-    # else
-    #     Ω = eval!(cRef, dx, y, y_refs, x, u, u_refs, t)
-    # end
-
     ##############
 
     function eval_pullback(r̄)
@@ -263,7 +253,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
             d̄x = collect(d̄x) # [d̄x...]
         end
 
-        # between building and using the pullback maybe the time, state or inputs where changed, so we need to re-set them
+        # between building and using the pullback maybe the time, state or inputs were changed, so we need to re-set them
        
         if states && c.x != x
             fmi2SetContinuousStates(c, x)
@@ -306,12 +296,6 @@ function ChainRulesCore.rrule(::typeof(eval!),
             if parameters
                 n_dx_p = fmi2VJP!(c, :E, dx_refs, p_refs, d̄x) 
                 c.solution.evals_∂ẋ_∂p += 1
-
-                # if rand(1:100) == 1
-                #     #@info "$(c.E.mtx)"
-                #     #@info "$(p_refs)"
-                #     @info "$(fmi2GetJacobian(c, dx_refs, p_refs))"
-                # end
             end
         end
 

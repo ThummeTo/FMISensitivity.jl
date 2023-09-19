@@ -3,9 +3,9 @@
 # Licensed under the MIT license. See LICENSE file in the project root for details.
 #
 
-import FMISensitivity.SciMLSensitivity.ForwardDiff 
-import FMISensitivity.SciMLSensitivity.Zygote
-import FMISensitivity.SciMLSensitivity.ReverseDiff
+import FMISensitivity.ForwardDiff 
+import FMISensitivity.Zygote
+import FMISensitivity.ReverseDiff
 
 # load demo FMU
 fmu = fmi2Load("SpringPendulumExtForce1D", ENV["EXPORTINGTOOL"], ENV["EXPORTINGVERSION"]; type=:ME)

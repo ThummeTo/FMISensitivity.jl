@@ -5,14 +5,19 @@
 
 module FMISensitivity
 
+# load modules for reusability in other frameworks
 import SciMLSensitivity
 import SciMLSensitivity.ForwardDiff
+import SciMLSensitivity.FiniteDiff
 import SciMLSensitivity.ReverseDiff
-using FMICore.ChainRulesCore
+import SciMLSensitivity.Zygote 
+import FMICore.ChainRulesCore
+
 import ForwardDiffChainRules: @ForwardDiff_frule
 import SciMLSensitivity.ReverseDiff: @grad_from_chainrules
 import FMICore.ChainRulesCore: ZeroTangent, NoTangent, @thunk
-import FMICore.ChainRulesCore
+using FMICore: undual, unsense, untrack
+
 using FMICore
 
 function isZeroTangent(d)
@@ -25,7 +30,6 @@ function isZeroTangent(d::AbstractArray{<:ZeroTangent})
     return true
 end
 
-include("utils.jl")
 include("FMI2.jl")
 
 end # module
