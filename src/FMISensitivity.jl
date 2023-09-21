@@ -18,6 +18,11 @@ import SciMLSensitivity.ReverseDiff: @grad_from_chainrules
 import FMICore.ChainRulesCore: ZeroTangent, NoTangent, @thunk
 using FMICore: undual, unsense, untrack
 
+using SciMLSensitivity.LinearAlgebra
+import SciMLSensitivity.SparseDiffTools
+
+import FMICore: invalidate!, check_invalidate!
+
 using FMICore
 
 function isZeroTangent(d)
