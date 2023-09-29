@@ -7,10 +7,10 @@ module FMISensitivity
 
 # load modules for reusability in other frameworks
 import SciMLSensitivity
-import SciMLSensitivity.ForwardDiff
-import SciMLSensitivity.FiniteDiff
-import SciMLSensitivity.ReverseDiff
-import SciMLSensitivity.Zygote 
+import SciMLSensitivity: ForwardDiff
+import SciMLSensitivity: FiniteDiff
+import SciMLSensitivity: ReverseDiff
+import SciMLSensitivity: Zygote 
 import FMICore.ChainRulesCore
 
 import ForwardDiffChainRules: @ForwardDiff_frule
@@ -35,6 +35,13 @@ function isZeroTangent(d::AbstractArray{<:ZeroTangent})
     return true
 end
 
+# additional dispatch for ReverseDiff.jl 
+import SciMLSensitivity.ReverseDiff: increment_deriv!, ZeroTangent
+function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedReal, ::ZeroTangent)
+    return nothing 
+end
+
 include("FMI2.jl")
+include("inplace.jl")
 
 end # module
