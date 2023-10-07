@@ -103,10 +103,24 @@ end
 
 # End: Test build-in derivatives (slow) only for jacobian A
 fmu.executionConfig.JVPBuiltInDerivatives = false
+
+@test c.solution.evals_∂ẋ_∂x == 4
+@test c.solution.evals_∂ẋ_∂u == 0
+@test c.solution.evals_∂ẋ_∂p == 0
+@test c.solution.evals_∂ẋ_∂t == 0
+
+@test c.solution.evals_∂y_∂x == 0
+@test c.solution.evals_∂y_∂u == 0
+@test c.solution.evals_∂y_∂p == 0
+@test c.solution.evals_∂y_∂t == 0
+
+@test c.solution.evals_∂e_∂x == 0
+@test c.solution.evals_∂e_∂u == 0
+@test c.solution.evals_∂e_∂p == 0
+@test c.solution.evals_∂e_∂t == 0
 reset!(c)
 
 # Jacobian A=∂dx/∂x (out-of-plcae)
-fmu.default_dx = fmu.empty_fmi2Real
 _f = _x -> fmu(;x=_x, dx=dx)
 _f(x)
 j_fwd = ForwardDiff.jacobian(_f, x)

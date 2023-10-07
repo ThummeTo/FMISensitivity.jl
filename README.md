@@ -15,7 +15,7 @@ This opens up to many applications like:
 - FMUs in Scientific Machine Learning, for example as part of Neural(O)DEs or PINNs with [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl)
 - gradient-based optimization of FMUs (typically parameters) with [*FMI.jl*](https://github.com/ThummeTo/FMIFlux.jl) (also *dynamic* optimization)
 - linearization, linear analysis and controller design
-- adding directional derivatives for existing FMUs with the power of Julia AD and [*FMIExport.jl*](https://github.com/ThummeTo/FMIExport.jl)
+- adding directional derivatives for existing FMUs with the power of Julia AD and [*FMIExport.jl*](https://github.com/ThummeTo/FMIExport.jl) [Tutorial is WIP]
 - ...
 
 Supported AD-Frameworks are:
@@ -25,7 +25,7 @@ Supported AD-Frameworks are:
 - Zygote [WIP]
 
 Here, *FMISensitivity.jl* uses everything the FMI-standard and Julia currently offers:
-- FMI built-in directional derivatives and adjoint derivatives [WIP]
+- FMI built-in directional derivatives [DONE] and adjoint derivatives [WIP]
 - Finite Differences (by *FiniteDiff.jl*) for FMUs that don't offer sensitivity information, as well as for special derivatives that are not part of the FMI-standard (like e.g. event-indicators or explicit time)
 - coloring based on sparsity information shipped with the FMU [WIP]
 - coloring based on sparsity detection for FMUs without sparsity information [WIP]

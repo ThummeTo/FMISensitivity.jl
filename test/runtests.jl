@@ -9,7 +9,7 @@ import Random
 using FMIZoo
 
 using FMIImport.FMICore: fmi2Integer, fmi2Boolean, fmi2Real, fmi2String
-using FMIImport.FMICore: FMU2_EXECUTION_CONFIGURATION_NO_FREEING, FMU2_EXECUTION_CONFIGURATION_NO_RESET, FMU2_EXECUTION_CONFIGURATION_RESET, FMU2_EXECUTION_CONFIGURATION_NOTHING
+using FMIImport.FMICore: FMU2_EXECUTION_CONFIGURATIONS
 
 exportingToolsWindows = [("Dymola", "2022x")]
 exportingToolsLinux = [("Dymola", "2022x")]
