@@ -12,7 +12,7 @@ import FMISensitivity.FiniteDiff
 CHECK_ZYGOTE = false
 
 # load demo FMU
-fmu = fmi2Load("SpringPendulumExtForce1D", ENV["EXPORTINGTOOL"], ENV["EXPORTINGVERSION"]; type=:ME)
+fmu = fmi2Load("SpringPendulumExtForce1D", EXPORTINGTOOL, EXPORTINGVERSION; type=:ME)
 
 # enable time gradient evaluation (disabled by default for performance reasons)
 fmu.executionConfig.eval_t_gradients = true
@@ -427,7 +427,7 @@ fmi2Unload(fmu)
 ########## Event Indicators Check ###########
 
 # load demo FMU
-fmu = fmi2Load("VLDM", "Dymola", "2020x"; type=:ME)
+fmu = fmi2Load("VLDM", EXPORTINGTOOL, "2020x"; type=:ME)
 data = FMIZoo.VLDM(:train)
 
 # enable time gradient evaluation (disabled by default for performance reasons)
