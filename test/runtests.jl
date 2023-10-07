@@ -14,12 +14,16 @@ using FMIImport.FMICore: FMU2_EXECUTION_CONFIGURATIONS
 exportingToolsWindows = [("Dymola", "2022x")]
 exportingToolsLinux = [("Dymola", "2022x")]
 
+global EXPORTINGTOOL
+global EXPORTINGVERSION
+
 function runtestsFMI2(exportingTool)
-    ENV["EXPORTINGTOOL"] = exportingTool[1]
-    ENV["EXPORTINGVERSION"] = exportingTool[2]
+    global EXPORTINGTOOL, EXPORTINGVERSION
+    EXPORTINGTOOL = exportingTool[1]
+    EXPORTINGVERSION = exportingTool[2]
 
     # enable assertions for warnings/errors for all default execution configurations 
-    for exec in [FMU2_EXECUTION_CONFIGURATION_NO_FREEING, FMU2_EXECUTION_CONFIGURATION_NO_RESET, FMU2_EXECUTION_CONFIGURATION_RESET, FMU2_EXECUTION_CONFIGURATION_NOTHING]
+    for exec in FMU2_EXECUTION_CONFIGURATIONS
         exec.assertOnError = true
         exec.assertOnWarning = true
     end

@@ -44,8 +44,8 @@ function fmi2GVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
     end
 
     if c.fmu.executionConfig.JVPBuiltInDerivatives && ddSupported(c) && !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
-        fmi2GetDirectionalDerivative!(c, ∂f_refs, ∂x_refs, grad.vgp, [seed])
-        return grad.vgp
+        fmi2GetDirectionalDerivative!(c, ∂f_refs, ∂x_refs, grad.gvp, [seed])
+        return grad.gvp
     else
         return gvp!(grad, x, seed)
     end
@@ -126,7 +126,7 @@ function ChainRulesCore.frule(Δtuple,
     states = (length(x) > 0)
     times = (t >= 0.0)
     parameters = (length(p_refs) > 0)
-    eventIndicators = (length(ec_idcs) > 0)
+    eventIndicators = (length(ec) > 0)
 
     Ω = eval!(cRef, dx, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
     
@@ -265,7 +265,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
     states = (length(x) > 0)
     times = (t >= 0.0)
     parameters = (length(p_refs) > 0)
-    eventIndicators = (length(ec_idcs) > 0)
+    eventIndicators = (length(ec) > 0)
 
     Ω = eval!(cRef, dx, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
 
