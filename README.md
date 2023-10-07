@@ -1,6 +1,10 @@
 ![FMI.jl Logo](https://github.com/ThummeTo/FMI.jl/blob/main/logo/dark/fmijl_logo_640_320.png?raw=true  "FMI.jl Logo")
 # FMISensitivity.jl
 
+[![Run Tests](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/Test.yml/badge.svg)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/Test.yml)
+[![Coverage](https://codecov.io/gh/ThummeTo/FMISensitivity.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/ThummeTo/FMISensitivity.jl)
+[![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
+
 ## What is FMISensitivity.jl?
 Unfortunately, FMUs ([fmi-standard.org](http://fmi-standard.org/)) are not differentiable by design. 
 To enable their full potential inside Julia, [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl) makes FMUs fully differentiable, regarding to:
@@ -31,10 +35,6 @@ Here, *FMISensitivity.jl* uses everything the FMI-standard and Julia currently o
 - coloring based on sparsity detection for FMUs without sparsity information [WIP]
 - implicite differentation
 - ...
-
-[![Run Tests](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/Test.yml/badge.svg)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/Test.yml)
-[![Coverage](https://codecov.io/gh/ThummeTo/FMISensitivity.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/ThummeTo/FMISensitivity.jl)
-[![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
 
 ## How can I use FMISensitivity.jl?
 [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl) is part of [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl). If you only need FMU sensitivities without anything around and want to keep the dependencies as small as possible, [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl) might be the right way to go. You can install it via:
