@@ -426,71 +426,75 @@ fmi2Unload(fmu)
 
 ########## Event Indicators Check ###########
 
-# load demo FMU
-fmu = fmi2Load("VLDM", EXPORTINGTOOL, "2020x"; type=:ME)
-data = FMIZoo.VLDM(:train)
+# [ToDo] Enable Test for Linux too (by providing a FMU)
 
-# enable time gradient evaluation (disabled by default for performance reasons)
-fmu.executionConfig.eval_t_gradients = true
+if Sys.iswindows()
+     # load demo FMU
+     fmu = fmi2Load("VLDM", EXPORTINGTOOL, "2020x"; type=:ME)
+     data = FMIZoo.VLDM(:train)
 
-# prepare (allocate) an FMU instance
-c, x0 = FMIImport.prepareSolveFMU(fmu, nothing, fmu.type, nothing, nothing, nothing, nothing, nothing, data.params, 0.0, 0.0, nothing)
+     # enable time gradient evaluation (disabled by default for performance reasons)
+     fmu.executionConfig.eval_t_gradients = true
 
-x_refs = fmu.modelDescription.stateValueReferences
-x = fmi2GetContinuousStates(c)
-dx = fmi2GetReal(c, c.fmu.modelDescription.derivativeValueReferences)
-u_refs = fmu.modelDescription.inputValueReferences
-u = zeros(fmi2Real, 0)
-y_refs = fmu.modelDescription.outputValueReferences
-y = zeros(fmi2Real, 0)
-p_refs = copy(fmu.modelDescription.parameterValueReferences)
+     # prepare (allocate) an FMU instance
+     c, x0 = FMIImport.prepareSolveFMU(fmu, nothing, fmu.type, nothing, nothing, nothing, nothing, nothing, data.params, 0.0, 0.0, nothing)
 
-# remove some parameters
-deleteat!(p_refs, findall(x -> (x >= UInt32(134217728) && x <= UInt32(134217737)), p_refs))
-p = fmi2GetReal(c, p_refs)
-e = fmi2GetEventIndicators(c)
-t = 0.0
+     x_refs = fmu.modelDescription.stateValueReferences
+     x = fmi2GetContinuousStates(c)
+     dx = fmi2GetReal(c, c.fmu.modelDescription.derivativeValueReferences)
+     u_refs = fmu.modelDescription.inputValueReferences
+     u = zeros(fmi2Real, 0)
+     y_refs = fmu.modelDescription.outputValueReferences
+     y = zeros(fmi2Real, 0)
+     p_refs = copy(fmu.modelDescription.parameterValueReferences)
 
-# Jacobian ∂e/∂x
-_f = function(_x)
-     ec_idcs = collect(UInt32(i) for i in 1:fmu.modelDescription.numberOfEventIndicators)
-     ret = fmu(;ec=e, ec_idcs=ec_idcs, x=_x)
-     ret.ec
+     # remove some parameters
+     deleteat!(p_refs, findall(x -> (x >= UInt32(134217728) && x <= UInt32(134217737)), p_refs))
+     p = fmi2GetReal(c, p_refs)
+     e = fmi2GetEventIndicators(c)
+     t = 0.0
+
+     # Jacobian ∂e/∂x
+     _f = function(_x)
+          ec_idcs = collect(UInt32(i) for i in 1:fmu.modelDescription.numberOfEventIndicators)
+          ret = fmu(;ec=e, ec_idcs=ec_idcs, x=_x)
+          ret.ec
+     end
+     _f(x)
+     j_fwd = ForwardDiff.jacobian(_f, x)
+     j_rwd = ReverseDiff.jacobian(_f, x)
+     j_fid = FiniteDiff.finite_difference_jacobian(_f, x)
+     # j_smp = fmi2SampleJacobian(c, :indicators, fmu.modelDescription.parameterValueReferences)
+     # no option to get sensitivitities directly in FMI2... 
+
+     # ToDo: Improve test, test again ground truth
+     @test isapprox(j_fwd, j_fid; atol=atol)
+     @test isapprox(j_rwd, j_fid; atol=atol)
+
+     if CHECK_ZYGOTE 
+          j_zyg = Zygote.jacobian(_f, x)[1]
+          @test isapprox(j_zyg, j_rwd; atol=atol)
+
+          @test c.solution.evals_∂e_∂x == 62
+     else
+          @test c.solution.evals_∂e_∂x == 34
+     end
+
+     @test c.solution.evals_∂ẋ_∂x == 0
+     @test c.solution.evals_∂ẋ_∂u == 0
+     @test c.solution.evals_∂ẋ_∂p == 0
+     @test c.solution.evals_∂ẋ_∂t == 0
+
+     @test c.solution.evals_∂y_∂x == 0
+     @test c.solution.evals_∂y_∂u == 0
+     @test c.solution.evals_∂y_∂p == 0
+     @test c.solution.evals_∂y_∂t == 0
+
+     @test c.solution.evals_∂e_∂u == 0
+     @test c.solution.evals_∂e_∂p == 0
+     @test c.solution.evals_∂e_∂t == 0
+     reset!(c)
+
+     # clean up
+     fmi2Unload(fmu)
 end
-_f(x)
-j_fwd = ForwardDiff.jacobian(_f, x)
-j_rwd = ReverseDiff.jacobian(_f, x)
-j_fid = FiniteDiff.finite_difference_jacobian(_f, x)
-# j_smp = fmi2SampleJacobian(c, :indicators, fmu.modelDescription.parameterValueReferences)
-# no option to get sensitivitities directly in FMI2... 
-
-# ToDo: Improve test, test again ground truth
-@test isapprox(j_fwd, j_fid; atol=atol)
-@test isapprox(j_rwd, j_fid; atol=atol)
-
-if CHECK_ZYGOTE 
-     j_zyg = Zygote.jacobian(_f, x)[1]
-     @test isapprox(j_zyg, j_rwd; atol=atol)
-
-     @test c.solution.evals_∂e_∂x == 62
-else
-     @test c.solution.evals_∂e_∂x == 34
-end
-
-@test c.solution.evals_∂ẋ_∂x == 0
-@test c.solution.evals_∂ẋ_∂u == 0
-@test c.solution.evals_∂ẋ_∂p == 0
-@test c.solution.evals_∂ẋ_∂t == 0
-
-@test c.solution.evals_∂y_∂x == 0
-@test c.solution.evals_∂y_∂u == 0
-@test c.solution.evals_∂y_∂p == 0
-@test c.solution.evals_∂y_∂t == 0
-
-@test c.solution.evals_∂e_∂u == 0
-@test c.solution.evals_∂e_∂p == 0
-@test c.solution.evals_∂e_∂t == 0
-reset!(c)
-
-# clean up
-fmi2Unload(fmu)
