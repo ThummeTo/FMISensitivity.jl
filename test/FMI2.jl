@@ -428,7 +428,7 @@ fmi2Unload(fmu)
 
 # [ToDo] Enable Test for Linux too (by providing a FMU)
 
-if iswindows()
+if Sys.iswindows()
      # load demo FMU
      fmu = fmi2Load("VLDM", EXPORTINGTOOL, "2020x"; type=:ME)
      data = FMIZoo.VLDM(:train)
