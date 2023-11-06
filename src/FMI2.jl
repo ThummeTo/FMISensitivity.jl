@@ -78,6 +78,7 @@ function ChainRulesCore.frule(Δtuple,
     ::typeof(eval!), 
     cRef, 
     dx,
+    dx_refs,
     y,
     y_refs, 
     x,
@@ -89,7 +90,7 @@ function ChainRulesCore.frule(Δtuple,
     ec_idcs,
     t)
 
-    Δself, ΔcRef, Δdx, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = undual(Δtuple)
+    Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = undual(Δtuple)
 
     ### ToDo: Somehow, ForwardDiff enters with all types beeing Float64, this needs to be corrected.
 
@@ -103,6 +104,9 @@ function ChainRulesCore.frule(Δtuple,
     u = undual(u)
     x = undual(x)
     p = undual(p)
+
+    dx_refs = undual(dx_refs)
+    dx_refs = convert(Array{UInt32,1}, dx_refs)
     
     y_refs = undual(y_refs)
     y_refs = convert(Array{UInt32,1}, y_refs)
@@ -128,13 +132,17 @@ function ChainRulesCore.frule(Δtuple,
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec) > 0)
 
-    Ω = eval!(cRef, dx, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+    Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
     
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
     ∂y = ZeroTangent()
     ∂dx = ZeroTangent()
     ∂e = ZeroTangent()
+
+    if length(dx_refs) == 0 # all derivatives, please!
+        dx_refs = c.fmu.modelDescription.derivativeValueReferences
+    end
 
     if Δx != NoTangent() && length(Δx) > 0
 
@@ -144,7 +152,7 @@ function ChainRulesCore.frule(Δtuple,
 
         if states
             if derivatives
-                ∂dx += fmi2JVP!(c, :∂ẋ_∂x, c.fmu.modelDescription.derivativeValueReferences, c.fmu.modelDescription.stateValueReferences, x, Δx)
+                ∂dx += fmi2JVP!(c, :∂ẋ_∂x, dx_refs, c.fmu.modelDescription.stateValueReferences, x, Δx)
                 c.solution.evals_∂ẋ_∂x += 1
             end
 
@@ -169,7 +177,7 @@ function ChainRulesCore.frule(Δtuple,
 
         if inputs
             if derivatives
-                ∂dx += fmi2JVP!(c, :∂ẋ_∂u, c.fmu.modelDescription.derivativeValueReferences, u_refs, u, Δu)
+                ∂dx += fmi2JVP!(c, :∂ẋ_∂u, dx_refs, u_refs, u, Δu)
                 c.solution.evals_∂ẋ_∂u += 1
             end
 
@@ -193,7 +201,7 @@ function ChainRulesCore.frule(Δtuple,
 
         if parameters
             if derivatives
-                ∂dx += fmi2JVP!(c, :∂ẋ_∂p, c.fmu.modelDescription.derivativeValueReferences, p_refs, p, Δp)
+                ∂dx += fmi2JVP!(c, :∂ẋ_∂p, dx_refs, p_refs, p, Δp)
                 c.solution.evals_∂ẋ_∂p += 1
             end
 
@@ -213,7 +221,7 @@ function ChainRulesCore.frule(Δtuple,
 
         if times 
             if derivatives
-                ∂dx += fmi2GVP!(c, :∂ẋ_∂t, c.fmu.modelDescription.derivativeValueReferences, :time, t, Δt)
+                ∂dx += fmi2GVP!(c, :∂ẋ_∂t, dx_refs, :time, t, Δt)
                 c.solution.evals_∂ẋ_∂t += 1
             end
 
@@ -244,6 +252,7 @@ end
 function ChainRulesCore.rrule(::typeof(eval!), 
     cRef, 
     dx,
+    dx_refs, 
     y,
     y_refs, 
     x,
@@ -267,7 +276,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec) > 0)
 
-    Ω = eval!(cRef, dx, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+    Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
 
     ##############
 
@@ -339,7 +348,9 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
         @debug "rrule pullback d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)"
 
-        dx_refs = c.fmu.modelDescription.derivativeValueReferences
+        if length(dx_refs) == 0 # all derivatives, please!
+            dx_refs = c.fmu.modelDescription.derivativeValueReferences
+        end
         x_refs = c.fmu.modelDescription.stateValueReferences
 
         if derivatives 
@@ -412,6 +423,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
         f̄ = NoTangent()
         c̄Ref = ZeroTangent()
         d̄x = ZeroTangent()
+        d̄x_refs = ZeroTangent()
         ȳ = ZeroTangent()
         ȳ_refs = ZeroTangent()
         ēc = ZeroTangent()
@@ -429,7 +441,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
         
         @debug "rrule:   $((f̄, c̄Ref, d̄x, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄))"
 
-        return (f̄, c̄Ref, d̄x, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
+        return (f̄, c̄Ref, d̄x, d̄x_refs, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
     end
 
     return (Ω, eval_pullback)
@@ -438,6 +450,7 @@ end
 # dx, y, x, u, t
 @ForwardDiff_frule eval!(cRef::UInt64, 
     dx    ::AbstractVector{<:ForwardDiff.Dual},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:ForwardDiff.Dual},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -451,6 +464,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64, 
     dx    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:ReverseDiff.TrackedReal},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -465,6 +479,7 @@ end
 # x, p
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -478,6 +493,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -492,6 +508,7 @@ end
 # t
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:Real}, 
@@ -505,6 +522,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:Real}, 
@@ -519,6 +537,7 @@ end
 # x
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -532,6 +551,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -546,6 +566,7 @@ end
 # u
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:Real}, 
@@ -559,6 +580,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:Real}, 
@@ -573,6 +595,7 @@ end
 # p
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:Real}, 
@@ -586,6 +609,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:Real}, 
@@ -600,6 +624,7 @@ end
 # ec
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:Real}, 
@@ -613,6 +638,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:Real}, 
@@ -627,6 +653,7 @@ end
 # x, t
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -640,6 +667,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -654,6 +682,7 @@ end
 # x, ec, t
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -667,6 +696,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -681,6 +711,7 @@ end
 # x, ec
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -694,6 +725,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -708,6 +740,7 @@ end
 # x, p, t
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -721,6 +754,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -735,6 +769,7 @@ end
 # x, p, ec, t
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -748,6 +783,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
@@ -762,6 +798,7 @@ end
 # x, p, ec
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmi2ValueReference},
     x     ::AbstractVector{<:ForwardDiff.Dual}, 
@@ -775,6 +812,7 @@ end
 
 @grad_from_chainrules eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
     y     ::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
     x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 

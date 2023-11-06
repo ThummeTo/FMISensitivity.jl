@@ -55,18 +55,27 @@ end
 
 # evaluation: set state
 ydx = fmu(;x=x)
+@test length(ydx) == 0
 
 # evaluation: set state, get state derivative
-ydx = fmu(;x=x, dx=dx)
+ydx = fmu(;x=x, dx_refs=:all)
+@test length(ydx) == 2
 
 # evaluation: set state and inputs
-ydx = fmu(;x=x, u=u, u_refs=u_refs)
+ydx = fmu(;x=x, u=u, u_refs=u_refs, dx_refs=:all)
+@test length(ydx) == 2
 
 # evaluation: set state and inputs, get state derivative and outputs (in-place)
 ydx = fmu(;dx=dx, x=x, u=u, u_refs=u_refs, y=y, y_refs=y_refs)
+@test length(ydx) == 4
+
+# evaluation: set state and inputs, get state derivative and outputs (in-place)
+ydx = fmu(;dx_refs=:all, x=x, u=u, u_refs=u_refs, y=y, y_refs=y_refs)
+@test length(ydx) == 4
 
 # evaluation: set state and inputs, parameters, get state derivative (in-place) and outputs (in-place)
 ydx = fmu(;x=x, u=u, u_refs=u_refs, y=y, y_refs=y_refs, dx=dx, p=p, p_refs=p_refs)
+@test length(ydx) == 4
 
 # known results
 atol= 1e-7
