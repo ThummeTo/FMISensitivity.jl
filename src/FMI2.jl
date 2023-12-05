@@ -92,37 +92,41 @@ function ChainRulesCore.frule(Δtuple,
 
     Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = undual(Δtuple)
 
+    @debug "frule start"
+
     ### ToDo: Somehow, ForwardDiff enters with all types beeing Float64, this needs to be corrected.
 
     cRef = undual(cRef)
     if typeof(cRef) != UInt64
         cRef = UInt64(cRef)
     end
+    c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
     
     # ToDo: is this necessary?
-    t = undual(t)
-    u = undual(u)
-    x = undual(x)
-    p = undual(p)
+    # t = undual(t)
+    # u = undual(u)
+    # x = undual(x)
+    # p = undual(p)
 
-    dx_refs = undual(dx_refs)
+    # dx_refs = undual(dx_refs)
     dx_refs = convert(Array{UInt32,1}, dx_refs)
+    if length(dx_refs) == 0 && length(dx) == length(c.fmu.modelDescription.derivativeValueReferences) # all derivatives, please!
+        dx_refs = c.fmu.modelDescription.derivativeValueReferences
+    end
     
-    y_refs = undual(y_refs)
+    # y_refs = undual(y_refs)
     y_refs = convert(Array{UInt32,1}, y_refs)
     
-    u_refs = undual(u_refs)
+    # u_refs = undual(u_refs)
     u_refs = convert(Array{UInt32,1}, u_refs)
     
-    p_refs = undual(p_refs)
+    # p_refs = undual(p_refs)
     p_refs = convert(Array{UInt32,1}, p_refs)
 
-    ec_idcs = undual(ec_idcs)
+    # ec_idcs = undual(ec_idcs)
     ec_idcs = convert(Array{UInt32,1}, ec_idcs) 
     
     ###
-
-    c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
 
     outputs = (length(y_refs) > 0)
     inputs = (length(u_refs) > 0)
@@ -130,19 +134,33 @@ function ChainRulesCore.frule(Δtuple,
     states = (length(x) > 0)
     times = (t >= 0.0)
     parameters = (length(p_refs) > 0)
-    eventIndicators = (length(ec) > 0)
+    eventIndicators = (length(ec_idcs) > 0)
 
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
     
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
-    ∂y = ZeroTangent()
-    ∂dx = ZeroTangent()
-    ∂e = ZeroTangent()
-
-    if length(dx_refs) == 0 # all derivatives, please!
-        dx_refs = c.fmu.modelDescription.derivativeValueReferences
+    if length(c.frule_output.y) != length(y)
+        c.frule_output.y = zeros(length(y))
+    else
+        c.frule_output.y .= 0.0
     end
+
+    if length(c.frule_output.dx) != length(dx)
+        c.frule_output.dx = zeros(length(dx))
+    else
+        c.frule_output.dx .= 0.0
+    end
+
+    if length(c.frule_output.ec) != length(ec)
+        c.frule_output.ec = zeros(length(ec))
+    else
+        c.frule_output.ec .= 0.0
+    end
+
+    ∂y = c.frule_output.y 
+    ∂dx = c.frule_output.dx 
+    ∂e = c.frule_output.ec 
 
     if Δx != NoTangent() && length(Δx) > 0
 
@@ -237,14 +255,20 @@ function ChainRulesCore.frule(Δtuple,
         end
     end
 
-    @debug "frule:   ∂y=$(∂y)   ∂dx=$(∂dx)   ∂e=$(∂e)"
+    @debug "frule end:   ∂y=$(∂y)   ∂dx=$(∂dx)   ∂e=$(∂e)"
 
-    ∂Ω = nothing
-    if c.fmu.executionConfig.concat_eval
-        ∂Ω = vcat(∂y, ∂dx, ∂e) # [∂y..., ∂dx..., ∂e...]
-    else
-        ∂Ω = (∂y, ∂dx, ∂e) 
-    end
+    # ∂Ω = nothing
+    # if c.fmu.executionConfig.concat_eval
+    #     ∂Ω = vcat(∂y, ∂dx, ∂e) # [∂y..., ∂dx..., ∂e...]
+    # else
+    #     ∂Ω = (∂y, ∂dx, ∂e) 
+    # end
+    # ∂Ω = vcat(∂y, ∂dx, ∂e)
+
+    c.frule_output.y  = ∂y
+    c.frule_output.dx = ∂dx
+    c.frule_output.ec = ∂e
+    ∂Ω = c.frule_output
 
     return Ω, ∂Ω 
 end
@@ -265,6 +289,8 @@ function ChainRulesCore.rrule(::typeof(eval!),
     t)
 
     @assert !isa(cRef, FMU2Component) "Wrong dispatched!"
+
+    @debug "rrule start: $((cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t))"
       
     c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
     
@@ -276,25 +302,33 @@ function ChainRulesCore.rrule(::typeof(eval!),
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec) > 0)
 
+    x = unsense(x)
+
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
 
     ##############
 
     function eval_pullback(r̄)
 
-        ȳ = nothing 
-        d̄x = nothing
-        ēc = nothing
+        # ȳ = nothing 
+        # d̄x = nothing
+        # ēc = nothing
 
-        if c.fmu.executionConfig.concat_eval
-            ylen = (isnothing(y_refs) ? 0 : length(y_refs))
-            dxlen = length(dx)
-            ȳ = r̄[1:ylen]
-            d̄x = r̄[ylen+1:ylen+dxlen]
-            ēc = r̄[ylen+dxlen+1:end]
-        else
-            ȳ, d̄x, ēc = r̄
-        end
+        # if c.fmu.executionConfig.concat_eval
+        #     ylen = (isnothing(y_refs) ? 0 : length(y_refs))
+        #     dxlen = length(dx)
+        #     ȳ = r̄[1:ylen]
+        #     d̄x = r̄[ylen+1:ylen+dxlen]
+        #     ēc = r̄[ylen+dxlen+1:end]
+        # else
+        #     ȳ, d̄x, ēc = r̄
+        # end
+
+        ylen = (isnothing(y_refs) ? 0 : length(y_refs))
+        dxlen = length(dx)
+        ȳ  = @view(r̄[1:ylen])
+        d̄x = @view(r̄[ylen+1:ylen+dxlen])
+        ēc = @view(r̄[ylen+dxlen+1:end])
 
         outputs = outputs && !isZeroTangent(ȳ)
         derivatives = derivatives && !isZeroTangent(d̄x)
@@ -346,6 +380,11 @@ function ChainRulesCore.rrule(::typeof(eval!),
         n_ec_p = ZeroTangent()
         n_ec_t = ZeroTangent()
 
+        x̄ = ZeroTangent()
+        t̄ = ZeroTangent()
+        ū = ZeroTangent()
+        p̄ = ZeroTangent()
+
         @debug "rrule pullback d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)"
 
         if length(dx_refs) == 0 # all derivatives, please!
@@ -355,66 +394,66 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
         if derivatives 
             if states
-                n_dx_x = fmi2VJP!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x) 
+                x̄ += fmi2VJP!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x) 
                 c.solution.evals_∂ẋ_∂x += 1
             end
 
             if inputs
-                n_dx_u = fmi2VJP!(c, :∂ẋ_∂u, dx_refs, u_refs, u, d̄x) 
+                ū += fmi2VJP!(c, :∂ẋ_∂u, dx_refs, u_refs, u, d̄x) 
                 c.solution.evals_∂ẋ_∂u += 1
             end
 
             if parameters
-                n_dx_p = fmi2VJP!(c, :∂ẋ_∂p, dx_refs, p_refs, p, d̄x) 
+                p̄ += fmi2VJP!(c, :∂ẋ_∂p, dx_refs, p_refs, p, d̄x) 
                 c.solution.evals_∂ẋ_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                n_dx_t = fmi2VGP!(c, :∂ẋ_∂t, dx_refs, :time, t, d̄x) 
+                t̄ += fmi2VGP!(c, :∂ẋ_∂t, dx_refs, :time, t, d̄x) 
                 c.solution.evals_∂ẋ_∂t += 1
             end
         end
 
         if outputs 
             if states
-                n_y_x = fmi2VJP!(c, :∂y_∂x, y_refs, x_refs, x, ȳ) 
+                x̄ += fmi2VJP!(c, :∂y_∂x, y_refs, x_refs, x, ȳ) 
                 c.solution.evals_∂y_∂x += 1
             end
         
             if inputs
-                n_y_u = fmi2VJP!(c, :∂y_∂u, y_refs, u_refs, u, ȳ) 
+                ū += fmi2VJP!(c, :∂y_∂u, y_refs, u_refs, u, ȳ) 
                 c.solution.evals_∂y_∂u += 1
             end
 
             if parameters
-                n_y_p = fmi2VJP!(c, :∂y_∂p, y_refs, p_refs, p, ȳ) 
+                p̄ += fmi2VJP!(c, :∂y_∂p, y_refs, p_refs, p, ȳ) 
                 c.solution.evals_∂y_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                n_y_t = fmi2VGP!(c, :∂y_∂t, y_refs, :time, t, ȳ)
+                t̄ += fmi2VGP!(c, :∂y_∂t, y_refs, :time, t, ȳ)
                 c.solution.evals_∂y_∂t += 1
             end
         end
 
         if eventIndicators
             if states
-                n_ec_x = fmi2VJP!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc) 
+                x̄ += fmi2VJP!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc) 
                 c.solution.evals_∂e_∂x += 1
             end
 
             if inputs
-                n_ec_u = fmi2VJP!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, ēc) 
+                ū += fmi2VJP!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, ēc) 
                 c.solution.evals_∂e_∂u += 1
             end
 
             if parameters
-                n_ec_p = fmi2VJP!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc) 
+                p̄ += fmi2VJP!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc) 
                 c.solution.evals_∂e_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                n_ec_t = fmi2VGP!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, ēc) 
+                t̄ += fmi2VGP!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, ēc) 
                 c.solution.evals_∂e_∂t += 1
             end
         end
@@ -428,19 +467,12 @@ function ChainRulesCore.rrule(::typeof(eval!),
         ȳ_refs = ZeroTangent()
         ēc = ZeroTangent()
         ēc_idcs = ZeroTangent()
-
-        t̄ = n_y_t + n_dx_t + n_ec_t
-
-        x̄ = n_y_x + n_dx_x + n_ec_x
-        
-        ū = n_y_u + n_dx_u + n_ec_u
         ū_refs = ZeroTangent()
-
-        p̄ = n_y_p + n_dx_p + n_ec_p
         p̄_refs = ZeroTangent()
         
         @debug "rrule:   $((f̄, c̄Ref, d̄x, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄))"
 
+        # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
         return (f̄, c̄Ref, d̄x, d̄x_refs, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
     end
 
@@ -846,6 +878,9 @@ mutable struct FMU2Jacobian{C, T, F} <: FMU2Sensitivities
     #cache::FiniteDiff.JacobianCache
     #colors::
 
+    validations::Int
+    colorings::Int
+
     function FMU2Jacobian{T}(component::C, f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}, x_refs::Union{Vector{UInt32}, Symbol}) where {C, T}
 
         @assert !isa(f_refs, Tuple) || f_refs[1] == :indicators "`f_refs` is Tuple, it must be `:indicators`"
@@ -881,7 +916,9 @@ mutable struct FMU2Jacobian{C, T, F} <: FMU2Sensitivities
         inst.vjp = zeros(T, x_len)
 
         inst.valid = false
+        inst.validations = 0
         inst.colored = false
+        inst.colorings = 0
         
         return inst
     end
@@ -905,6 +942,9 @@ mutable struct FMU2Gradient{C, T, F} <: FMU2Sensitivities
 
     #cache::FiniteDiff.GradientCache
     #colors::
+
+    validations::Int
+    colorings::Int
 
     function FMU2Gradient{T}(component::C, f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}, x_refs::Union{UInt32, Symbol}) where {C, T}
 
@@ -939,7 +979,9 @@ mutable struct FMU2Gradient{C, T, F} <: FMU2Sensitivities
         inst.vgp = zeros(T, x_len)
 
         inst.valid = false
+        inst.validations = 0
         inst.colored = false
+        inst.colorings = 0
         
         return inst
     end
@@ -1012,6 +1054,7 @@ function validate!(jac::FMU2Jacobian, x::AbstractVector)
         FiniteDiff.finite_difference_jacobian!(jac.mtx, (_x, _dx) -> (jac.f(jac, _x, _dx)), x) # , cache)
     end
 
+    jac.validations += 1
     jac.valid = true 
     return nothing
 end
@@ -1026,15 +1069,17 @@ function validate!(grad::FMU2Gradient, x::Real)
         FiniteDiff.finite_difference_gradient!(grad.vec, (_x, _dx) -> (grad.f(grad, _x, _dx)), x) # , cache)
     end
 
+    grad.validations += 1
     grad.valid = true 
     return nothing
 end
     
-function color!(jac::FMU2Sensitivities)
+function color!(sens::FMU2Sensitivities)
     # ToDo
     # colors = SparseDiffTools.matrix_colors(sparsejac)
 
-    jac.colored = true 
+    sens.colorings += 1
+    sens.colored = true 
     return nothing
 end
 
