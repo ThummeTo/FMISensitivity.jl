@@ -13,6 +13,7 @@ import SciMLSensitivity: ReverseDiff
 import SciMLSensitivity: Zygote 
 import FMICore.ChainRulesCore
 
+import ForwardDiffChainRules
 import ForwardDiffChainRules: @ForwardDiff_frule
 import SciMLSensitivity.ReverseDiff: @grad_from_chainrules
 import FMICore.ChainRulesCore: ZeroTangent, NoTangent, @thunk

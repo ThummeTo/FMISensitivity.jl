@@ -56,6 +56,8 @@ function fmi2VJP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
+        @assert typeof(seed[1]) == Float64 "fmi2VJP! for non-float value of type $(typeof(seed[1])),\nseed vector is: $(seed)"
+
         jac = FMU2Jacobian{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, jac)
     end
@@ -302,13 +304,16 @@ function ChainRulesCore.rrule(::typeof(eval!),
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec) > 0)
 
-    x = unsense(x)
+    # [ToDo] remove!
+    # x = unsense(x)
 
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
 
     ##############
 
     function eval_pullback(r̄)
+
+        @debug "pullback start: $(r̄)"
 
         # ȳ = nothing 
         # d̄x = nothing
@@ -325,10 +330,10 @@ function ChainRulesCore.rrule(::typeof(eval!),
         # end
 
         ylen = (isnothing(y_refs) ? 0 : length(y_refs))
-        dxlen = length(dx)
-        ȳ  = @view(r̄[1:ylen])
-        d̄x = @view(r̄[ylen+1:ylen+dxlen])
-        ēc = @view(r̄[ylen+dxlen+1:end])
+        dxlen = (isnothing(dx) ? 0 : length(dx))
+        ȳ  = r̄[1:ylen] # @view(r̄[1:ylen])
+        d̄x = r̄[ylen+1:ylen+dxlen] # @view(r̄[ylen+1:ylen+dxlen])
+        ēc = r̄[ylen+dxlen+1:end] # @view(r̄[ylen+dxlen+1:end])
 
         outputs = outputs && !isZeroTangent(ȳ)
         derivatives = derivatives && !isZeroTangent(d̄x)
@@ -344,6 +349,21 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
         if !isa(ēc, AbstractArray)
             ēc = collect(ēc) # [ēc...]
+        end
+
+        if !isa(ȳ, AbstractVector{fmi2Real})
+            @warn "ȳ isa $(typeof(ȳ))"
+            ȳ = convert(Vector{fmi2Real}, ȳ)
+        end
+
+        if !isa(d̄x, AbstractVector{fmi2Real})
+            @warn "d̄x isa $(typeof(d̄x))"
+            d̄x = convert(Vector{fmi2Real}, d̄x)
+        end
+
+        if !isa(ēc, AbstractVector{fmi2Real})
+            @warn "ēc isa $(typeof(ēc))"
+            ēc = convert(Vector{fmi2Real}, ēc)
         end
 
         # [ToDo] Is the following statement correct?
@@ -387,7 +407,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
         @debug "rrule pullback d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)"
 
-        if length(dx_refs) == 0 # all derivatives, please!
+        if length(dx) > 0 && length(dx_refs) == 0 # all derivatives, please!
             dx_refs = c.fmu.modelDescription.derivativeValueReferences
         end
         x_refs = c.fmu.modelDescription.stateValueReferences
@@ -475,6 +495,8 @@ function ChainRulesCore.rrule(::typeof(eval!),
         # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
         return (f̄, c̄Ref, d̄x, d̄x_refs, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
     end
+
+    @debug "rrule end: $((Ω, eval_pullback))"
 
     return (Ω, eval_pullback)
 end
