@@ -332,17 +332,18 @@ function ChainRulesCore.rrule(::typeof(eval!),
     # [ToDo] remove!
     # x = unsense(x)
 
+    # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
+    #        setting the corresponding snapshot (that holds all related quantitites, including the discrete state)
+    #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback seperately,
+    #        because they are evaluated at different points in time during ODE solving.
+    if length(c.solution.snapshots) > 0 
+        sn = getSnapshot!(c, t)
+        apply!(c, sn)
+    end
+
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
 
     ##############
-
-    # [ToDo] maybe the arrays change between pullback creation and use!
-    x = copy(x)
-    p = copy(p)
-    u = copy(u)
-    dx = copy(dx)
-    y = copy(y)
-    ec = copy(ec)
 
     function eval_pullback(r̄)
 
@@ -362,13 +363,6 @@ function ChainRulesCore.rrule(::typeof(eval!),
         #     ȳ, d̄x, ēc = r̄
         # end
 
-        # [ToDo] This is not a good workaround for ReverseDiff!
-        # for i in 1:length(r̄)
-        #     if abs(r̄[i]) > 1e64 
-        #         r̄[i] = 0.0 
-        #     end
-        # end
-
         ylen = (isnothing(y_refs) ? 0 : length(y_refs))
         dxlen = (isnothing(dx) ? 0 : length(dx))
         ȳ  = r̄[1:ylen] # @view(r̄[1:ylen])
@@ -380,31 +374,19 @@ function ChainRulesCore.rrule(::typeof(eval!),
         eventIndicators = eventIndicators && !isZeroTangent(ēc)
 
         if !isa(ȳ, AbstractArray)
+            @assert false "deprected!"
             ȳ = collect(ȳ) # [ȳ...]
         end
 
         if !isa(d̄x, AbstractArray)
+            @assert false "deprected!"
             d̄x = collect(d̄x) # [d̄x...]
         end
 
         if !isa(ēc, AbstractArray)
+            @assert false "deprected!"
             ēc = collect(ēc) # [ēc...]
         end
-
-        # if !isa(ȳ, AbstractVector{fmi2Real})
-        #     @warn "ȳ isa $(typeof(ȳ))"
-        #     ȳ = convert(Vector{fmi2Real}, ȳ)
-        # end
-
-        # if !isa(d̄x, AbstractVector{fmi2Real})
-        #     @warn "d̄x isa $(typeof(d̄x))"
-        #     d̄x = convert(Vector{fmi2Real}, d̄x)
-        # end
-
-        # if !isa(ēc, AbstractVector{fmi2Real})
-        #     @warn "ēc isa $(typeof(ēc))"
-        #     ēc = convert(Vector{fmi2Real}, ēc)
-        # end
 
         # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
         #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
@@ -432,6 +414,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
             fmi2SetTime(c, t)
         end
 
+        # [ToDo] replace by No/ZeroTangents!
         x̄ = zeros(length(x)) #ZeroTangent()
         t̄ = 0.0 #ZeroTangent()
         ū = zeros(length(u)) #ZeroTangent()
@@ -510,6 +493,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
         end
 
         # write back
+        # [ToDo] replace by No/ZeroTangents!
         f̄ = [] # NoTangent()
         c̄Ref = [] # ZeroTangent()
         d̄x_refs = [] # ZeroTangent()
@@ -518,9 +502,10 @@ function ChainRulesCore.rrule(::typeof(eval!),
         ū_refs = [] # ZeroTangent()
         p̄_refs = [] # ZeroTangent()
 
-        d̄x = zeros(length(dx)) # ZeroTangent()
-        ȳ = zeros(length(y)) # ZeroTangent()
-        ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
+        # [Note] overwrite not necessary, aren't further used
+        # d̄x = zeros(length(dx)) # ZeroTangent()
+        # ȳ = zeros(length(y)) # ZeroTangent()
+        # ēc = zeros(length(ec)) # ZeroTangent() 
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
         
