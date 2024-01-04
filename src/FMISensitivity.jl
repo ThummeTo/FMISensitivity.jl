@@ -37,13 +37,13 @@ function isZeroTangent(d::AbstractArray{<:ZeroTangent})
 end
 
 # additional dispatch for ReverseDiff.jl 
-import SciMLSensitivity.ReverseDiff: increment_deriv!, ZeroTangent
-function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedReal, ::ZeroTangent)
-    return nothing 
-end
-function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedArray, ::ZeroTangent, ::Int64)
-    return nothing 
-end
+# import SciMLSensitivity.ReverseDiff: increment_deriv!, ZeroTangent
+# function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedReal, ::ZeroTangent)
+#     return nothing 
+# end
+# function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedArray, ::ZeroTangent, ::Int64)
+#     return nothing 
+# end
 
 include("FMI2.jl")
 

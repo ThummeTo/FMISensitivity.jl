@@ -23,7 +23,10 @@ function fmi2JVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
-        jac = FMU2Jacobian{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        jac = FMU2Jacobian{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, jac)
     end
 
@@ -39,7 +42,10 @@ function fmi2GVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     grad = getfield(c, mtxCache)
     if isnothing(grad)
-        grad = FMU2Gradient{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        grad = FMU2Gradient{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, grad)
     end
 
@@ -56,20 +62,30 @@ function fmi2VJP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
-        @assert typeof(seed[1]) == Float64 "fmi2VJP! for non-float value of type $(typeof(seed[1])),\nseed vector is: $(seed)"
-
-        jac = FMU2Jacobian{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        jac = FMU2Jacobian{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, jac)
     end
     
-    return vjp!(jac, x, seed)
+    res =  vjp!(jac, x, seed)
+
+    # if !isa(∂f_refs, Tuple) 
+    #     @info "$(∂f_refs) $(jac.mtx)"
+    # end
+
+    return res
 end
 
 function fmi2VGP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed)
 
     grad = getfield(c, mtxCache)
     if isnothing(grad)
-        grad = FMU2Gradient{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        grad = FMU2Gradient{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, grad)
     end
     
@@ -142,27 +158,31 @@ function ChainRulesCore.frule(Δtuple,
     
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
-    if length(c.frule_output.y) != length(y)
-        c.frule_output.y = zeros(length(y))
-    else
-        c.frule_output.y .= 0.0
-    end
+    # if length(c.frule_output.y) != length(y)
+    #     c.frule_output.y = zeros(length(y))
+    # else
+    #     c.frule_output.y .= 0.0
+    # end
 
-    if length(c.frule_output.dx) != length(dx)
-        c.frule_output.dx = zeros(length(dx))
-    else
-        c.frule_output.dx .= 0.0
-    end
+    # if length(c.frule_output.dx) != length(dx)
+    #     c.frule_output.dx = zeros(length(dx))
+    # else
+    #     c.frule_output.dx .= 0.0
+    # end
 
-    if length(c.frule_output.ec) != length(ec)
-        c.frule_output.ec = zeros(length(ec))
-    else
-        c.frule_output.ec .= 0.0
-    end
+    # if length(c.frule_output.ec) != length(ec)
+    #     c.frule_output.ec = zeros(length(ec))
+    # else
+    #     c.frule_output.ec .= 0.0
+    # end
 
-    ∂y = c.frule_output.y 
-    ∂dx = c.frule_output.dx 
-    ∂e = c.frule_output.ec 
+    # ∂y = c.frule_output.y 
+    # ∂dx = c.frule_output.dx 
+    # ∂e = c.frule_output.ec 
+
+    ∂y = ZeroTangent()
+    ∂dx = ZeroTangent()
+    ∂e = ZeroTangent()
 
     if Δx != NoTangent() && length(Δx) > 0
 
@@ -267,10 +287,15 @@ function ChainRulesCore.frule(Δtuple,
     # end
     # ∂Ω = vcat(∂y, ∂dx, ∂e)
 
-    c.frule_output.y  = ∂y
-    c.frule_output.dx = ∂dx
-    c.frule_output.ec = ∂e
-    ∂Ω = c.frule_output
+    ∂Ω = FMU2EvaluationOutput{Float64}()
+    ∂Ω.y  = ∂y
+    ∂Ω.dx = ∂dx
+    ∂Ω.ec = ∂e
+
+    # c.frule_output.y  = ∂y
+    # c.frule_output.dx = ∂dx
+    # c.frule_output.ec = ∂e
+    # ∂Ω = c.frule_output
 
     return Ω, ∂Ω 
 end
@@ -311,11 +336,19 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
     ##############
 
+    # [ToDo] maybe the arrays change between pullback creation and use!
+    x = copy(x)
+    p = copy(p)
+    u = copy(u)
+    dx = copy(dx)
+    y = copy(y)
+    ec = copy(ec)
+
     function eval_pullback(r̄)
 
-        @debug "pullback start: $(r̄)"
+        #println("$(t),")
 
-        # ȳ = nothing 
+              # ȳ = nothing 
         # d̄x = nothing
         # ēc = nothing
 
@@ -327,6 +360,13 @@ function ChainRulesCore.rrule(::typeof(eval!),
         #     ēc = r̄[ylen+dxlen+1:end]
         # else
         #     ȳ, d̄x, ēc = r̄
+        # end
+
+        # [ToDo] This is not a good workaround for ReverseDiff!
+        # for i in 1:length(r̄)
+        #     if abs(r̄[i]) > 1e64 
+        #         r̄[i] = 0.0 
+        #     end
         # end
 
         ylen = (isnothing(y_refs) ? 0 : length(y_refs))
@@ -351,25 +391,32 @@ function ChainRulesCore.rrule(::typeof(eval!),
             ēc = collect(ēc) # [ēc...]
         end
 
-        if !isa(ȳ, AbstractVector{fmi2Real})
-            @warn "ȳ isa $(typeof(ȳ))"
-            ȳ = convert(Vector{fmi2Real}, ȳ)
+        # if !isa(ȳ, AbstractVector{fmi2Real})
+        #     @warn "ȳ isa $(typeof(ȳ))"
+        #     ȳ = convert(Vector{fmi2Real}, ȳ)
+        # end
+
+        # if !isa(d̄x, AbstractVector{fmi2Real})
+        #     @warn "d̄x isa $(typeof(d̄x))"
+        #     d̄x = convert(Vector{fmi2Real}, d̄x)
+        # end
+
+        # if !isa(ēc, AbstractVector{fmi2Real})
+        #     @warn "ēc isa $(typeof(ēc))"
+        #     ēc = convert(Vector{fmi2Real}, ēc)
+        # end
+
+        # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
+        #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
+        #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
+        #        set during pullback evaluation. (discrete FMU state might change during simulation)
+        if length(c.solution.snapshots) > 0 # c.t != t 
+            sn = getSnapshot!(c, t)
+            apply!(c, sn)
         end
 
-        if !isa(d̄x, AbstractVector{fmi2Real})
-            @warn "d̄x isa $(typeof(d̄x))"
-            d̄x = convert(Vector{fmi2Real}, d̄x)
-        end
-
-        if !isa(ēc, AbstractVector{fmi2Real})
-            @warn "ēc isa $(typeof(ēc))"
-            ēc = convert(Vector{fmi2Real}, ēc)
-        end
-
-        # [ToDo] Is the following statement correct?
-        #        Between building and using the pullback, maybe the time, state or inputs were changed, so we need to set them again.
-       
-        if states && c.x != x && !c.fmu.isZeroState
+        # [ToDo] Not everything is still needed (from the setters)
+        if states && !c.fmu.isZeroState # && c.x != x 
             fmi2SetContinuousStates(c, x)
         end
 
@@ -381,31 +428,14 @@ function ChainRulesCore.rrule(::typeof(eval!),
             fmi2SetReal(c, p_refs, p)
         end
 
-        if times && c.t != t
+        if times # && c.t != t
             fmi2SetTime(c, t)
         end
 
-        n_dx_x = ZeroTangent()
-        n_dx_u = ZeroTangent()
-        n_dx_p = ZeroTangent()
-        n_dx_t = ZeroTangent()
-
-        n_y_x = ZeroTangent()
-        n_y_u = ZeroTangent()
-        n_y_p = ZeroTangent()
-        n_y_t = ZeroTangent()
-
-        n_ec_x = ZeroTangent()
-        n_ec_u = ZeroTangent()
-        n_ec_p = ZeroTangent()
-        n_ec_t = ZeroTangent()
-
-        x̄ = ZeroTangent()
-        t̄ = ZeroTangent()
-        ū = ZeroTangent()
-        p̄ = ZeroTangent()
-
-        @debug "rrule pullback d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)"
+        x̄ = zeros(length(x)) #ZeroTangent()
+        t̄ = 0.0 #ZeroTangent()
+        ū = zeros(length(u)) #ZeroTangent()
+        p̄ = zeros(length(p)) #eroTangent()
 
         if length(dx) > 0 && length(dx_refs) == 0 # all derivatives, please!
             dx_refs = c.fmu.modelDescription.derivativeValueReferences
@@ -414,6 +444,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
         if derivatives 
             if states
+                # [ToDo] everywhere here, `+=` allocates, better `.+=` ?
                 x̄ += fmi2VJP!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x) 
                 c.solution.evals_∂ẋ_∂x += 1
             end
@@ -479,19 +510,20 @@ function ChainRulesCore.rrule(::typeof(eval!),
         end
 
         # write back
-        f̄ = NoTangent()
-        c̄Ref = ZeroTangent()
-        d̄x = ZeroTangent()
-        d̄x_refs = ZeroTangent()
-        ȳ = ZeroTangent()
-        ȳ_refs = ZeroTangent()
-        ēc = ZeroTangent()
-        ēc_idcs = ZeroTangent()
-        ū_refs = ZeroTangent()
-        p̄_refs = ZeroTangent()
-        
-        @debug "rrule:   $((f̄, c̄Ref, d̄x, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄))"
+        f̄ = [] # NoTangent()
+        c̄Ref = [] # ZeroTangent()
+        d̄x_refs = [] # ZeroTangent()
+        ȳ_refs = [] # ZeroTangent()
+        ēc_idcs = [] # ZeroTangent()
+        ū_refs = [] # ZeroTangent()
+        p̄_refs = [] # ZeroTangent()
 
+        d̄x = zeros(length(dx)) # ZeroTangent()
+        ȳ = zeros(length(y)) # ZeroTangent()
+        ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
+
+        @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
+        
         # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
         return (f̄, c̄Ref, d̄x, d̄x_refs, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
     end
@@ -1117,22 +1149,25 @@ function update!(jac::FMU2Sensitivities, x)
 end
 
 function jvp!(jac::FMU2Jacobian, x::AbstractVector, v::AbstractVector)
-    update!(jac, x)
+    FMISensitivity.update!(jac, x)
+    #return jac.mtx * v
     return mul!(jac.jvp, jac.mtx, v)
 end
 
 function vjp!(jac::FMU2Jacobian, x::AbstractVector, v::AbstractVector)
-    update!(jac, x)
+    FMISensitivity.update!(jac, x)
+    #return jac.mtx' * v 
     return mul!(jac.vjp, jac.mtx', v)
 end
 
 function gvp!(grad::FMU2Gradient, x, v)
-    update!(grad, x)
+    FMISensitivity.update!(grad, x)
+    #return grad.vec * v 
     return mul!(grad.gvp, grad.vec, v)
 end
 
 function vgp!(grad::FMU2Gradient, x, v)
-    update!(grad, x)
+    FMISensitivity.update!(grad, x)
     mul!(grad.vgp, grad.vec', v) 
     return grad.vgp[1]
 end
