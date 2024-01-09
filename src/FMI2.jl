@@ -108,13 +108,13 @@ function ChainRulesCore.frule(Δtuple,
     ec_idcs,
     t)
 
-    Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = undual(Δtuple)
+    Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = Δtuple # undual ?
 
     @debug "frule start"
 
     ### ToDo: Somehow, ForwardDiff enters with all types beeing Float64, this needs to be corrected.
 
-    cRef = undual(cRef)
+    cRef = unsense(cRef) # undual(cRef)
     if typeof(cRef) != UInt64
         cRef = UInt64(cRef)
     end
@@ -126,22 +126,22 @@ function ChainRulesCore.frule(Δtuple,
     # x = undual(x)
     # p = undual(p)
 
-    # dx_refs = undual(dx_refs)
+    dx_refs = unsense(dx_refs)
     dx_refs = convert(Array{UInt32,1}, dx_refs)
     if length(dx_refs) == 0 && length(dx) == length(c.fmu.modelDescription.derivativeValueReferences) # all derivatives, please!
         dx_refs = c.fmu.modelDescription.derivativeValueReferences
     end
     
-    # y_refs = undual(y_refs)
+    # y_refs = unsense(y_refs)
     y_refs = convert(Array{UInt32,1}, y_refs)
     
-    # u_refs = undual(u_refs)
+    # u_refs = unsense(u_refs)
     u_refs = convert(Array{UInt32,1}, u_refs)
     
-    # p_refs = undual(p_refs)
+    # p_refs = unsense(p_refs)
     p_refs = convert(Array{UInt32,1}, p_refs)
 
-    # ec_idcs = undual(ec_idcs)
+    # ec_idcs = unsense(ec_idcs)
     ec_idcs = convert(Array{UInt32,1}, ec_idcs) 
     
     ###
@@ -343,7 +343,25 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
 
+    # [ToDo] remove this copy
+    Ω = copy(Ω)
+
+    # if t < 1.0
+    #     @assert dx[2] <= 0.0 "$(dx[2]) for t=$(t)"
+    # end 
+    # if t > 1.0 && t < 2.0
+    #     @assert dx[2] >= 0.0 "$(dx[2]) for t=$(t)"
+    # end
+
     ##############
+
+    # [ToDo] maybe the arrays change between pullback creation and use!
+    x = copy(x)
+    p = copy(p)
+    u = copy(u)
+    dx = copy(dx)
+    y = copy(y)
+    ec = copy(ec)
 
     function eval_pullback(r̄)
 
@@ -363,6 +381,13 @@ function ChainRulesCore.rrule(::typeof(eval!),
         #     ȳ, d̄x, ēc = r̄
         # end
 
+        # [ToDo] This is not a good workaround for ReverseDiff!
+        # for i in 1:length(r̄)
+        #     if abs(r̄[i]) > 1e64 
+        #         r̄[i] = 0.0 
+        #     end
+        # end
+
         ylen = (isnothing(y_refs) ? 0 : length(y_refs))
         dxlen = (isnothing(dx) ? 0 : length(dx))
         ȳ  = r̄[1:ylen] # @view(r̄[1:ylen])
@@ -374,19 +399,31 @@ function ChainRulesCore.rrule(::typeof(eval!),
         eventIndicators = eventIndicators && !isZeroTangent(ēc)
 
         if !isa(ȳ, AbstractArray)
-            @assert false "deprected!"
             ȳ = collect(ȳ) # [ȳ...]
         end
 
         if !isa(d̄x, AbstractArray)
-            @assert false "deprected!"
             d̄x = collect(d̄x) # [d̄x...]
         end
 
         if !isa(ēc, AbstractArray)
-            @assert false "deprected!"
             ēc = collect(ēc) # [ēc...]
         end
+
+        # if !isa(ȳ, AbstractVector{fmi2Real})
+        #     @warn "ȳ isa $(typeof(ȳ))"
+        #     ȳ = convert(Vector{fmi2Real}, ȳ)
+        # end
+
+        # if !isa(d̄x, AbstractVector{fmi2Real})
+        #     @warn "d̄x isa $(typeof(d̄x))"
+        #     d̄x = convert(Vector{fmi2Real}, d̄x)
+        # end
+
+        # if !isa(ēc, AbstractVector{fmi2Real})
+        #     @warn "ēc isa $(typeof(ēc))"
+        #     ēc = convert(Vector{fmi2Real}, ēc)
+        # end
 
         # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
         #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
@@ -414,7 +451,6 @@ function ChainRulesCore.rrule(::typeof(eval!),
             fmi2SetTime(c, t)
         end
 
-        # [ToDo] replace by No/ZeroTangents!
         x̄ = zeros(length(x)) #ZeroTangent()
         t̄ = 0.0 #ZeroTangent()
         ū = zeros(length(u)) #ZeroTangent()
@@ -493,7 +529,6 @@ function ChainRulesCore.rrule(::typeof(eval!),
         end
 
         # write back
-        # [ToDo] replace by No/ZeroTangents!
         f̄ = [] # NoTangent()
         c̄Ref = [] # ZeroTangent()
         d̄x_refs = [] # ZeroTangent()
@@ -502,10 +537,9 @@ function ChainRulesCore.rrule(::typeof(eval!),
         ū_refs = [] # ZeroTangent()
         p̄_refs = [] # ZeroTangent()
 
-        # [Note] overwrite not necessary, aren't further used
-        # d̄x = zeros(length(dx)) # ZeroTangent()
-        # ȳ = zeros(length(y)) # ZeroTangent()
-        # ēc = zeros(length(ec)) # ZeroTangent() 
+        d̄x = zeros(length(dx)) # ZeroTangent()
+        ȳ = zeros(length(y)) # ZeroTangent()
+        ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
         
@@ -517,6 +551,35 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
     return (Ω, eval_pullback)
 end
+
+# dx, y, x, u, p, ec, t
+@ForwardDiff_frule eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:ForwardDiff.Dual},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:ForwardDiff.Dual},
+    y_refs::AbstractVector{<:fmi2ValueReference},
+    x     ::AbstractVector{<:ForwardDiff.Dual}, 
+    u     ::AbstractVector{<:ForwardDiff.Dual},
+    u_refs::AbstractVector{<:fmi2ValueReference},
+    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p_refs::AbstractVector{<:fmi2ValueReference},
+    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ForwardDiff.Dual)
+
+@grad_from_chainrules eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    y_refs::AbstractVector{<:UInt32},
+    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
+    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    u_refs::AbstractVector{<:UInt32},
+    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p_refs::AbstractVector{<:UInt32},
+    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ReverseDiff.TrackedReal)
 
 # dx, y, x, u, t
 @ForwardDiff_frule eval!(cRef::UInt64, 
