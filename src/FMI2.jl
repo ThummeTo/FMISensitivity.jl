@@ -337,7 +337,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
     #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback seperately,
     #        because they are evaluated at different points in time during ODE solving.
     if length(c.solution.snapshots) > 0 
-        sn = getSnapshot!(c, t)
+        sn = getSnapshot(c.solution, t)
         apply!(c, sn)
     end
 
@@ -430,7 +430,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
         #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
         #        set during pullback evaluation. (discrete FMU state might change during simulation)
         if length(c.solution.snapshots) > 0 # c.t != t 
-            sn = getSnapshot!(c, t)
+            sn = getSnapshot(c.solution, t)
             apply!(c, sn)
         end
 
