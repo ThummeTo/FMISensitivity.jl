@@ -842,6 +842,35 @@ end
     ec_idcs::AbstractVector{<:fmi2ValueReference},
     t     ::ReverseDiff.TrackedReal)
 
+# ec, t
+@ForwardDiff_frule eval!(cRef::UInt64,  
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:fmi2ValueReference},
+    x     ::AbstractVector{<:Real}, 
+    u     ::AbstractVector{<:Real},
+    u_refs::AbstractVector{<:fmi2ValueReference},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:fmi2ValueReference},
+    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ForwardDiff.Dual)
+
+@grad_from_chainrules eval!(cRef::UInt64,  
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:UInt32},
+    x     ::AbstractVector{<:Real}, 
+    u     ::AbstractVector{<:Real},
+    u_refs::AbstractVector{<:UInt32},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:UInt32},
+    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ReverseDiff.TrackedReal)
+
 # x, ec
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
