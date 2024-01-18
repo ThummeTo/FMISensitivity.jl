@@ -34,7 +34,7 @@ p = fmi2GetReal(c, p_refs)
 e = fmi2GetEventIndicators(c)
 t = 0.0
 
-function reset!(c::FMIImport.FMU2Component)
+reset! = function(c::FMIImport.FMU2Component)
     c.solution.evals_∂ẋ_∂x = 0
     c.solution.evals_∂ẋ_∂u = 0
     c.solution.evals_∂ẋ_∂p = 0

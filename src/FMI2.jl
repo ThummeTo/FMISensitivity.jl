@@ -132,16 +132,15 @@ function ChainRulesCore.frule(Δtuple,
         dx_refs = c.fmu.modelDescription.derivativeValueReferences
     end
     
-    # y_refs = unsense(y_refs)
-    y_refs = convert(Array{UInt32,1}, y_refs)
-    
-    # u_refs = unsense(u_refs)
-    u_refs = convert(Array{UInt32,1}, u_refs)
-    
-    # p_refs = unsense(p_refs)
-    p_refs = convert(Array{UInt32,1}, p_refs)
+    # [Note] `unsense` is necessary for AD over AD
+    y_refs = unsense(y_refs)
+    u_refs = unsense(u_refs)
+    p_refs = unsense(p_refs)
+    ec_idcs = unsense(ec_idcs)
 
-    # ec_idcs = unsense(ec_idcs)
+    y_refs = convert(Array{UInt32,1}, y_refs)
+    u_refs = convert(Array{UInt32,1}, u_refs)
+    p_refs = convert(Array{UInt32,1}, p_refs)
     ec_idcs = convert(Array{UInt32,1}, ec_idcs) 
     
     ###
@@ -186,9 +185,9 @@ function ChainRulesCore.frule(Δtuple,
 
     if Δx != NoTangent() && length(Δx) > 0
 
-        if !isa(Δx, AbstractVector{fmi2Real})
-            Δx = convert(Vector{fmi2Real}, Δx)
-        end
+        # if !isa(Δx, AbstractVector{fmi2Real})
+        #     Δx = convert(Vector{fmi2Real}, Δx)
+        # end
 
         if states
             if derivatives
@@ -211,9 +210,9 @@ function ChainRulesCore.frule(Δtuple,
     
     if Δu != NoTangent() && length(Δu) > 0
 
-        if !isa(Δu, AbstractVector{fmi2Real})
-            Δu = convert(Vector{fmi2Real}, Δu)
-        end
+        # if !isa(Δu, AbstractVector{fmi2Real})
+        #     Δu = convert(Vector{fmi2Real}, Δu)
+        # end
 
         if inputs
             if derivatives
@@ -235,9 +234,9 @@ function ChainRulesCore.frule(Δtuple,
 
     if Δp != NoTangent() && length(Δp) > 0
 
-        if !isa(Δp, AbstractVector{fmi2Real})
-            Δp = convert(Vector{fmi2Real}, Δp)
-        end
+        # if !isa(Δp, AbstractVector{fmi2Real})
+        #     Δp = convert(Vector{fmi2Real}, Δp)
+        # end
 
         if parameters
             if derivatives
@@ -287,7 +286,8 @@ function ChainRulesCore.frule(Δtuple,
     # end
     # ∂Ω = vcat(∂y, ∂dx, ∂e)
 
-    ∂Ω = FMU2EvaluationOutput{Float64}()
+    # [Note] Type Real is required for AD over AD
+    ∂Ω = FMU2EvaluationOutput{Real}() # Float64
     ∂Ω.y  = ∂y
     ∂Ω.dx = ∂dx
     ∂Ω.ec = ∂e
@@ -609,6 +609,35 @@ end
     ec    ::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmi2ValueReference},
     t     ::ReverseDiff.TrackedReal)
+
+# x, u
+@ForwardDiff_frule eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:fmi2ValueReference},
+    x     ::AbstractVector{<:ForwardDiff.Dual}, 
+    u     ::AbstractVector{<:ForwardDiff.Dual},
+    u_refs::AbstractVector{<:fmi2ValueReference},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:fmi2ValueReference},
+    ec    ::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::Real)
+
+@grad_from_chainrules eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:UInt32},
+    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
+    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    u_refs::AbstractVector{<:UInt32},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:UInt32},
+    ec    ::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::Real)
 
 # x, p
 @ForwardDiff_frule eval!(cRef::UInt64,  
