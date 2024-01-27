@@ -355,7 +355,7 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
     ##############
 
-    # [ToDo] maybe the arrays change between pullback creation and use!
+    # [ToDo] maybe the arrays change between pullback creation and use! check this!
     x = copy(x)
     p = copy(p)
     u = copy(u)
@@ -390,8 +390,9 @@ function ChainRulesCore.rrule(::typeof(eval!),
 
         ylen = (isnothing(y_refs) ? 0 : length(y_refs))
         dxlen = (isnothing(dx) ? 0 : length(dx))
-        ȳ  = r̄[1:ylen] # @view(r̄[1:ylen])
-        d̄x = r̄[ylen+1:ylen+dxlen] # @view(r̄[ylen+1:ylen+dxlen])
+        
+        d̄x = r̄[1:dxlen] # @view(r̄[ylen+1:ylen+dxlen])
+        ȳ  = r̄[dxlen+1:dxlen+ylen] # @view(r̄[1:ylen])
         ēc = r̄[ylen+dxlen+1:end] # @view(r̄[ylen+dxlen+1:end])
 
         outputs = outputs && !isZeroTangent(ȳ)
