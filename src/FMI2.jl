@@ -30,6 +30,9 @@ function fmi2JVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
         setfield!(c, mtxCache, jac)
     end
 
+    jac.f_refs = ∂f_refs
+    jac.x_refs = ∂x_refs
+
     if c.fmu.executionConfig.JVPBuiltInDerivatives && ddSupported(c) && !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
         fmi2GetDirectionalDerivative!(c, ∂f_refs, ∂x_refs, jac.vjp, seed)
         return jac.vjp
@@ -48,6 +51,9 @@ function fmi2GVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
         grad = FMU2Gradient{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, grad)
     end
+
+    grad.f_refs = ∂f_refs
+    grad.x_refs = ∂x_refs
 
     if c.fmu.executionConfig.JVPBuiltInDerivatives && ddSupported(c) && !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
         fmi2GetDirectionalDerivative!(c, ∂f_refs, ∂x_refs, grad.gvp, [seed])
@@ -68,6 +74,9 @@ function fmi2VJP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
         jac = FMU2Jacobian{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, jac)
     end
+
+    jac.f_refs = ∂f_refs
+    jac.x_refs = ∂x_refs
     
     res =  vjp!(jac, x, seed)
 
@@ -88,6 +97,9 @@ function fmi2VGP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
         grad = FMU2Gradient{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, grad)
     end
+
+    grad.f_refs = ∂f_refs
+    grad.x_refs = ∂x_refs
     
     return vgp!(grad, x, seed)
 end
@@ -1075,7 +1087,7 @@ mutable struct FMU2Jacobian{C, T, F} <: FMU2Sensitivities
         inst.mtx = zeros(T, f_len, x_len)
         inst.jvp = zeros(T, f_len)
         inst.vjp = zeros(T, x_len)
-
+        
         inst.valid = false
         inst.validations = 0
         inst.colored = false
@@ -1244,13 +1256,42 @@ function color!(sens::FMU2Sensitivities)
     return nothing
 end
 
-function update!(jac::FMU2Sensitivities, x)
+function update!(jac::FMU2Jacobian, x)
+
+    if size(jac.mtx) != (length(jac.f_refs), length(jac.x_refs))
+        jac.mtx = similar(jac.mtx, length(jac.f_refs), length(jac.x_refs))
+        jac.jvp = similar(jac.jvp, length(jac.f_refs))
+        jac.vjp = similar(jac.vjp, length(jac.x_refs))
+        
+        jac.valid = false
+    end
+
     if !jac.valid
         validate!(jac, x)
     end
 
     if !jac.colored
         color!(jac)
+    end
+    return nothing
+end
+
+function update!(gra::FMU2Gradient, x)
+
+    if length(gra.vec) != length(jac.f_refs)
+        gra.vec = similar(gra.vec, length(jac.f_refs))
+        gra.gvp = similar(gra.gvp, length(jac.f_refs))
+        gra.vgp = similar(gra.vgp, length(jac.x_refs))
+        
+        jac.valid = false
+    end
+
+    if !gra.valid
+        validate!(gra, x)
+    end
+
+    if !gra.colored
+        color!(gra)
     end
     return nothing
 end
