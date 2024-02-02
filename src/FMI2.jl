@@ -1256,12 +1256,33 @@ function color!(sens::FMU2Sensitivities)
     return nothing
 end
 
+function ref_length(ref::AbstractArray)
+    return length(ref)
+end
+
+function ref_length(ref::Symbol)
+    if ref == :time 
+        return 1 
+    else
+        @assert false "unknwon ref symbol: $(ref)"
+    end
+end
+
+function ref_length(ref::Tuple)
+    @assert length(ref) == 2 "tuple ref length is $(length(ref)) != 2"
+    if ref[1] == :indicators 
+        return length(ref[2])
+    else
+        @assert false "unknwon tuple ref $(ref)"
+    end
+end
+
 function update!(jac::FMU2Jacobian, x)
 
-    if size(jac.mtx) != (length(jac.f_refs), length(jac.x_refs))
-        jac.mtx = similar(jac.mtx, length(jac.f_refs), length(jac.x_refs))
-        jac.jvp = similar(jac.jvp, length(jac.f_refs))
-        jac.vjp = similar(jac.vjp, length(jac.x_refs))
+    if size(jac.mtx) != (ref_length(jac.f_refs), ref_length(jac.x_refs))
+        jac.mtx = similar(jac.mtx, ref_length(jac.f_refs), ref_length(jac.x_refs))
+        jac.jvp = similar(jac.jvp, ref_length(jac.f_refs))
+        jac.vjp = similar(jac.vjp, ref_length(jac.x_refs))
         
         jac.valid = false
     end
@@ -1278,12 +1299,12 @@ end
 
 function update!(gra::FMU2Gradient, x)
 
-    if length(gra.vec) != length(jac.f_refs)
-        gra.vec = similar(gra.vec, length(jac.f_refs))
-        gra.gvp = similar(gra.gvp, length(jac.f_refs))
-        gra.vgp = similar(gra.vgp, length(jac.x_refs))
+    if length(gra.vec) != ref_length(gra.f_refs)
+        gra.vec = similar(gra.vec, ref_length(jac.f_refs))
+        gra.gvp = similar(gra.gvp, ref_length(jac.f_refs))
+        gra.vgp = similar(gra.vgp, ref_length(jac.x_refs))
         
-        jac.valid = false
+        gra.valid = false
     end
 
     if !gra.valid

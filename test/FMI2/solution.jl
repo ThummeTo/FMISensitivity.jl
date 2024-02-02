@@ -10,9 +10,6 @@ import FMISensitivity.ReverseDiff
 
 CHECK_ZYGOTE = false
 
-function euler_integrate(tStart, tStop)
-end
-
 # load demo FMU
 fmu = fmi2Load("SpringPendulumExtForce1D", EXPORTINGTOOL, EXPORTINGVERSION; type=:ME)
 
