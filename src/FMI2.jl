@@ -23,9 +23,15 @@ function fmi2JVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
-        jac = FMU2Jacobian{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        jac = FMU2Jacobian{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, jac)
     end
+
+    jac.f_refs = ∂f_refs
+    jac.x_refs = ∂x_refs
 
     if c.fmu.executionConfig.JVPBuiltInDerivatives && ddSupported(c) && !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
         fmi2GetDirectionalDerivative!(c, ∂f_refs, ∂x_refs, jac.vjp, seed)
@@ -39,9 +45,15 @@ function fmi2GVP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     grad = getfield(c, mtxCache)
     if isnothing(grad)
-        grad = FMU2Gradient{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        grad = FMU2Gradient{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, grad)
     end
+
+    grad.f_refs = ∂f_refs
+    grad.x_refs = ∂x_refs
 
     if c.fmu.executionConfig.JVPBuiltInDerivatives && ddSupported(c) && !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
         fmi2GetDirectionalDerivative!(c, ∂f_refs, ∂x_refs, grad.gvp, [seed])
@@ -56,20 +68,38 @@ function fmi2VJP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, s
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
-        jac = FMU2Jacobian{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        jac = FMU2Jacobian{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, jac)
     end
+
+    jac.f_refs = ∂f_refs
+    jac.x_refs = ∂x_refs
     
-    return vjp!(jac, x, seed)
+    res =  vjp!(jac, x, seed)
+
+    # if !isa(∂f_refs, Tuple) 
+    #     @info "$(∂f_refs) $(jac.mtx)"
+    # end
+
+    return res
 end
 
 function fmi2VGP!(c::FMU2Component, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed)
 
     grad = getfield(c, mtxCache)
     if isnothing(grad)
-        grad = FMU2Gradient{typeof(seed[1])}(c, ∂f_refs, ∂x_refs)
+        # [Note] type Real, so AD-primitves can be stored for AD over AD 
+        # this is necessary for e.g. gradient over implicit solver solutions with autodiff=true
+        T = typeof(seed[1])
+        grad = FMU2Gradient{T}(c, ∂f_refs, ∂x_refs)
         setfield!(c, mtxCache, grad)
     end
+
+    grad.f_refs = ∂f_refs
+    grad.x_refs = ∂x_refs
     
     return vgp!(grad, x, seed)
 end
@@ -90,39 +120,42 @@ function ChainRulesCore.frule(Δtuple,
     ec_idcs,
     t)
 
-    Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = undual(Δtuple)
+    Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = Δtuple # undual ?
+
+    @debug "frule start"
 
     ### ToDo: Somehow, ForwardDiff enters with all types beeing Float64, this needs to be corrected.
 
-    cRef = undual(cRef)
+    cRef = unsense(cRef) # undual(cRef)
     if typeof(cRef) != UInt64
         cRef = UInt64(cRef)
     end
+    c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
     
     # ToDo: is this necessary?
-    t = undual(t)
-    u = undual(u)
-    x = undual(x)
-    p = undual(p)
+    # t = undual(t)
+    # u = undual(u)
+    # x = undual(x)
+    # p = undual(p)
 
-    dx_refs = undual(dx_refs)
+    dx_refs = unsense(dx_refs)
     dx_refs = convert(Array{UInt32,1}, dx_refs)
+    if length(dx_refs) == 0 && length(dx) == length(c.fmu.modelDescription.derivativeValueReferences) # all derivatives, please!
+        dx_refs = c.fmu.modelDescription.derivativeValueReferences
+    end
     
-    y_refs = undual(y_refs)
-    y_refs = convert(Array{UInt32,1}, y_refs)
-    
-    u_refs = undual(u_refs)
-    u_refs = convert(Array{UInt32,1}, u_refs)
-    
-    p_refs = undual(p_refs)
-    p_refs = convert(Array{UInt32,1}, p_refs)
+    # [Note] `unsense` is necessary for AD over AD
+    y_refs = unsense(y_refs)
+    u_refs = unsense(u_refs)
+    p_refs = unsense(p_refs)
+    ec_idcs = unsense(ec_idcs)
 
-    ec_idcs = undual(ec_idcs)
+    y_refs = convert(Array{UInt32,1}, y_refs)
+    u_refs = convert(Array{UInt32,1}, u_refs)
+    p_refs = convert(Array{UInt32,1}, p_refs)
     ec_idcs = convert(Array{UInt32,1}, ec_idcs) 
     
     ###
-
-    c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
 
     outputs = (length(y_refs) > 0)
     inputs = (length(u_refs) > 0)
@@ -130,25 +163,43 @@ function ChainRulesCore.frule(Δtuple,
     states = (length(x) > 0)
     times = (t >= 0.0)
     parameters = (length(p_refs) > 0)
-    eventIndicators = (length(ec) > 0)
+    eventIndicators = (length(ec_idcs) > 0)
 
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
     
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
+    # if length(c.frule_output.y) != length(y)
+    #     c.frule_output.y = zeros(length(y))
+    # else
+    #     c.frule_output.y .= 0.0
+    # end
+
+    # if length(c.frule_output.dx) != length(dx)
+    #     c.frule_output.dx = zeros(length(dx))
+    # else
+    #     c.frule_output.dx .= 0.0
+    # end
+
+    # if length(c.frule_output.ec) != length(ec)
+    #     c.frule_output.ec = zeros(length(ec))
+    # else
+    #     c.frule_output.ec .= 0.0
+    # end
+
+    # ∂y = c.frule_output.y 
+    # ∂dx = c.frule_output.dx 
+    # ∂e = c.frule_output.ec 
+
     ∂y = ZeroTangent()
     ∂dx = ZeroTangent()
     ∂e = ZeroTangent()
 
-    if length(dx_refs) == 0 # all derivatives, please!
-        dx_refs = c.fmu.modelDescription.derivativeValueReferences
-    end
-
     if Δx != NoTangent() && length(Δx) > 0
 
-        if !isa(Δx, AbstractVector{fmi2Real})
-            Δx = convert(Vector{fmi2Real}, Δx)
-        end
+        # if !isa(Δx, AbstractVector{fmi2Real})
+        #     Δx = convert(Vector{fmi2Real}, Δx)
+        # end
 
         if states
             if derivatives
@@ -171,9 +222,9 @@ function ChainRulesCore.frule(Δtuple,
     
     if Δu != NoTangent() && length(Δu) > 0
 
-        if !isa(Δu, AbstractVector{fmi2Real})
-            Δu = convert(Vector{fmi2Real}, Δu)
-        end
+        # if !isa(Δu, AbstractVector{fmi2Real})
+        #     Δu = convert(Vector{fmi2Real}, Δu)
+        # end
 
         if inputs
             if derivatives
@@ -195,9 +246,9 @@ function ChainRulesCore.frule(Δtuple,
 
     if Δp != NoTangent() && length(Δp) > 0
 
-        if !isa(Δp, AbstractVector{fmi2Real})
-            Δp = convert(Vector{fmi2Real}, Δp)
-        end
+        # if !isa(Δp, AbstractVector{fmi2Real})
+        #     Δp = convert(Vector{fmi2Real}, Δp)
+        # end
 
         if parameters
             if derivatives
@@ -237,14 +288,26 @@ function ChainRulesCore.frule(Δtuple,
         end
     end
 
-    @debug "frule:   ∂y=$(∂y)   ∂dx=$(∂dx)   ∂e=$(∂e)"
+    @debug "frule end:   ∂y=$(∂y)   ∂dx=$(∂dx)   ∂e=$(∂e)"
 
-    ∂Ω = nothing
-    if c.fmu.executionConfig.concat_eval
-        ∂Ω = vcat(∂y, ∂dx, ∂e) # [∂y..., ∂dx..., ∂e...]
-    else
-        ∂Ω = (∂y, ∂dx, ∂e) 
-    end
+    # ∂Ω = nothing
+    # if c.fmu.executionConfig.concat_eval
+    #     ∂Ω = vcat(∂y, ∂dx, ∂e) # [∂y..., ∂dx..., ∂e...]
+    # else
+    #     ∂Ω = (∂y, ∂dx, ∂e) 
+    # end
+    # ∂Ω = vcat(∂y, ∂dx, ∂e)
+
+    # [Note] Type Real is required for AD over AD
+    ∂Ω = FMU2EvaluationOutput{Real}() # Float64
+    ∂Ω.y  = ∂y
+    ∂Ω.dx = ∂dx
+    ∂Ω.ec = ∂e
+
+    # c.frule_output.y  = ∂y
+    # c.frule_output.dx = ∂dx
+    # c.frule_output.ec = ∂e
+    # ∂Ω = c.frule_output
 
     return Ω, ∂Ω 
 end
@@ -265,6 +328,8 @@ function ChainRulesCore.rrule(::typeof(eval!),
     t)
 
     @assert !isa(cRef, FMU2Component) "Wrong dispatched!"
+
+    @debug "rrule start: $((cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t))"
       
     c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
     
@@ -276,25 +341,71 @@ function ChainRulesCore.rrule(::typeof(eval!),
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec) > 0)
 
+    # [ToDo] remove!
+    # x = unsense(x)
+
+    # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
+    #        setting the corresponding snapshot (that holds all related quantitites, including the discrete state)
+    #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback seperately,
+    #        because they are evaluated at different points in time during ODE solving.
+    if length(c.solution.snapshots) > 0 
+        sn = getSnapshot(c.solution, t)
+        apply!(c, sn)
+    end
+
     Ω = eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+
+    # [ToDo] remove this copy
+    Ω = copy(Ω)
+
+    # if t < 1.0
+    #     @assert dx[2] <= 0.0 "$(dx[2]) for t=$(t)"
+    # end 
+    # if t > 1.0 && t < 2.0
+    #     @assert dx[2] >= 0.0 "$(dx[2]) for t=$(t)"
+    # end
 
     ##############
 
+    # [ToDo] maybe the arrays change between pullback creation and use! check this!
+    x = copy(x)
+    p = copy(p)
+    u = copy(u)
+    dx = copy(dx)
+    y = copy(y)
+    ec = copy(ec)
+
     function eval_pullback(r̄)
 
-        ȳ = nothing 
-        d̄x = nothing
-        ēc = nothing
+        #println("$(t),")
 
-        if c.fmu.executionConfig.concat_eval
-            ylen = (isnothing(y_refs) ? 0 : length(y_refs))
-            dxlen = length(dx)
-            ȳ = r̄[1:ylen]
-            d̄x = r̄[ylen+1:ylen+dxlen]
-            ēc = r̄[ylen+dxlen+1:end]
-        else
-            ȳ, d̄x, ēc = r̄
-        end
+              # ȳ = nothing 
+        # d̄x = nothing
+        # ēc = nothing
+
+        # if c.fmu.executionConfig.concat_eval
+        #     ylen = (isnothing(y_refs) ? 0 : length(y_refs))
+        #     dxlen = length(dx)
+        #     ȳ = r̄[1:ylen]
+        #     d̄x = r̄[ylen+1:ylen+dxlen]
+        #     ēc = r̄[ylen+dxlen+1:end]
+        # else
+        #     ȳ, d̄x, ēc = r̄
+        # end
+
+        # [ToDo] This is not a good workaround for ReverseDiff!
+        # for i in 1:length(r̄)
+        #     if abs(r̄[i]) > 1e64 
+        #         r̄[i] = 0.0 
+        #     end
+        # end
+
+        ylen = (isnothing(y_refs) ? 0 : length(y_refs))
+        dxlen = (isnothing(dx) ? 0 : length(dx))
+        
+        d̄x = r̄[1:dxlen] # @view(r̄[ylen+1:ylen+dxlen])
+        ȳ  = r̄[dxlen+1:dxlen+ylen] # @view(r̄[1:ylen])
+        ēc = r̄[ylen+dxlen+1:end] # @view(r̄[ylen+dxlen+1:end])
 
         outputs = outputs && !isZeroTangent(ȳ)
         derivatives = derivatives && !isZeroTangent(d̄x)
@@ -312,10 +423,32 @@ function ChainRulesCore.rrule(::typeof(eval!),
             ēc = collect(ēc) # [ēc...]
         end
 
-        # [ToDo] Is the following statement correct?
-        #        Between building and using the pullback, maybe the time, state or inputs were changed, so we need to set them again.
-       
-        if states && c.x != x && !c.fmu.isZeroState
+        # if !isa(ȳ, AbstractVector{fmi2Real})
+        #     @warn "ȳ isa $(typeof(ȳ))"
+        #     ȳ = convert(Vector{fmi2Real}, ȳ)
+        # end
+
+        # if !isa(d̄x, AbstractVector{fmi2Real})
+        #     @warn "d̄x isa $(typeof(d̄x))"
+        #     d̄x = convert(Vector{fmi2Real}, d̄x)
+        # end
+
+        # if !isa(ēc, AbstractVector{fmi2Real})
+        #     @warn "ēc isa $(typeof(ēc))"
+        #     ēc = convert(Vector{fmi2Real}, ēc)
+        # end
+
+        # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
+        #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
+        #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
+        #        set during pullback evaluation. (discrete FMU state might change during simulation)
+        if length(c.solution.snapshots) > 0 # c.t != t 
+            sn = getSnapshot(c.solution, t)
+            apply!(c, sn)
+        end
+
+        # [ToDo] Not everything is still needed (from the setters)
+        if states && !c.fmu.isZeroState # && c.x != x 
             fmi2SetContinuousStates(c, x)
         end
 
@@ -327,125 +460,139 @@ function ChainRulesCore.rrule(::typeof(eval!),
             fmi2SetReal(c, p_refs, p)
         end
 
-        if times && c.t != t
+        if times # && c.t != t
             fmi2SetTime(c, t)
         end
 
-        n_dx_x = ZeroTangent()
-        n_dx_u = ZeroTangent()
-        n_dx_p = ZeroTangent()
-        n_dx_t = ZeroTangent()
+        x̄ = zeros(length(x)) #ZeroTangent()
+        t̄ = 0.0 #ZeroTangent()
+        ū = zeros(length(u)) #ZeroTangent()
+        p̄ = zeros(length(p)) #eroTangent()
 
-        n_y_x = ZeroTangent()
-        n_y_u = ZeroTangent()
-        n_y_p = ZeroTangent()
-        n_y_t = ZeroTangent()
-
-        n_ec_x = ZeroTangent()
-        n_ec_u = ZeroTangent()
-        n_ec_p = ZeroTangent()
-        n_ec_t = ZeroTangent()
-
-        @debug "rrule pullback d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)"
-
-        if length(dx_refs) == 0 # all derivatives, please!
+        if length(dx) > 0 && length(dx_refs) == 0 # all derivatives, please!
             dx_refs = c.fmu.modelDescription.derivativeValueReferences
         end
         x_refs = c.fmu.modelDescription.stateValueReferences
 
         if derivatives 
             if states
-                n_dx_x = fmi2VJP!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x) 
+                # [ToDo] everywhere here, `+=` allocates, better `.+=` ?
+                x̄ += fmi2VJP!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x) 
                 c.solution.evals_∂ẋ_∂x += 1
             end
 
             if inputs
-                n_dx_u = fmi2VJP!(c, :∂ẋ_∂u, dx_refs, u_refs, u, d̄x) 
+                ū += fmi2VJP!(c, :∂ẋ_∂u, dx_refs, u_refs, u, d̄x) 
                 c.solution.evals_∂ẋ_∂u += 1
             end
 
             if parameters
-                n_dx_p = fmi2VJP!(c, :∂ẋ_∂p, dx_refs, p_refs, p, d̄x) 
+                p̄ += fmi2VJP!(c, :∂ẋ_∂p, dx_refs, p_refs, p, d̄x) 
                 c.solution.evals_∂ẋ_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                n_dx_t = fmi2VGP!(c, :∂ẋ_∂t, dx_refs, :time, t, d̄x) 
+                t̄ += fmi2VGP!(c, :∂ẋ_∂t, dx_refs, :time, t, d̄x) 
                 c.solution.evals_∂ẋ_∂t += 1
             end
         end
 
         if outputs 
             if states
-                n_y_x = fmi2VJP!(c, :∂y_∂x, y_refs, x_refs, x, ȳ) 
+                x̄ += fmi2VJP!(c, :∂y_∂x, y_refs, x_refs, x, ȳ) 
                 c.solution.evals_∂y_∂x += 1
             end
         
             if inputs
-                n_y_u = fmi2VJP!(c, :∂y_∂u, y_refs, u_refs, u, ȳ) 
+                ū += fmi2VJP!(c, :∂y_∂u, y_refs, u_refs, u, ȳ) 
                 c.solution.evals_∂y_∂u += 1
             end
 
             if parameters
-                n_y_p = fmi2VJP!(c, :∂y_∂p, y_refs, p_refs, p, ȳ) 
+                p̄ += fmi2VJP!(c, :∂y_∂p, y_refs, p_refs, p, ȳ) 
                 c.solution.evals_∂y_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                n_y_t = fmi2VGP!(c, :∂y_∂t, y_refs, :time, t, ȳ)
+                t̄ += fmi2VGP!(c, :∂y_∂t, y_refs, :time, t, ȳ)
                 c.solution.evals_∂y_∂t += 1
             end
         end
 
         if eventIndicators
             if states
-                n_ec_x = fmi2VJP!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc) 
+                x̄ += fmi2VJP!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc) 
                 c.solution.evals_∂e_∂x += 1
             end
 
             if inputs
-                n_ec_u = fmi2VJP!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, ēc) 
+                ū += fmi2VJP!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, ēc) 
                 c.solution.evals_∂e_∂u += 1
             end
 
             if parameters
-                n_ec_p = fmi2VJP!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc) 
+                p̄ += fmi2VJP!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc) 
                 c.solution.evals_∂e_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                n_ec_t = fmi2VGP!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, ēc) 
+                t̄ += fmi2VGP!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, ēc) 
                 c.solution.evals_∂e_∂t += 1
             end
         end
 
         # write back
-        f̄ = NoTangent()
-        c̄Ref = ZeroTangent()
-        d̄x = ZeroTangent()
-        d̄x_refs = ZeroTangent()
-        ȳ = ZeroTangent()
-        ȳ_refs = ZeroTangent()
-        ēc = ZeroTangent()
-        ēc_idcs = ZeroTangent()
+        f̄ = [] # NoTangent()
+        c̄Ref = [] # ZeroTangent()
+        d̄x_refs = [] # ZeroTangent()
+        ȳ_refs = [] # ZeroTangent()
+        ēc_idcs = [] # ZeroTangent()
+        ū_refs = [] # ZeroTangent()
+        p̄_refs = [] # ZeroTangent()
 
-        t̄ = n_y_t + n_dx_t + n_ec_t
+        d̄x = zeros(length(dx)) # ZeroTangent()
+        ȳ = zeros(length(y)) # ZeroTangent()
+        ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
 
-        x̄ = n_y_x + n_dx_x + n_ec_x
+        @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
         
-        ū = n_y_u + n_dx_u + n_ec_u
-        ū_refs = ZeroTangent()
-
-        p̄ = n_y_p + n_dx_p + n_ec_p
-        p̄_refs = ZeroTangent()
-        
-        @debug "rrule:   $((f̄, c̄Ref, d̄x, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄))"
-
+        # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
         return (f̄, c̄Ref, d̄x, d̄x_refs, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
     end
 
+    @debug "rrule end: $((Ω, eval_pullback))"
+
     return (Ω, eval_pullback)
 end
+
+# dx, y, x, u, p, ec, t
+@ForwardDiff_frule eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:ForwardDiff.Dual},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:ForwardDiff.Dual},
+    y_refs::AbstractVector{<:fmi2ValueReference},
+    x     ::AbstractVector{<:ForwardDiff.Dual}, 
+    u     ::AbstractVector{<:ForwardDiff.Dual},
+    u_refs::AbstractVector{<:fmi2ValueReference},
+    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p_refs::AbstractVector{<:fmi2ValueReference},
+    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ForwardDiff.Dual)
+
+@grad_from_chainrules eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    y_refs::AbstractVector{<:UInt32},
+    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
+    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    u_refs::AbstractVector{<:UInt32},
+    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p_refs::AbstractVector{<:UInt32},
+    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ReverseDiff.TrackedReal)
 
 # dx, y, x, u, t
 @ForwardDiff_frule eval!(cRef::UInt64, 
@@ -475,6 +622,35 @@ end
     ec    ::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmi2ValueReference},
     t     ::ReverseDiff.TrackedReal)
+
+# x, u
+@ForwardDiff_frule eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:fmi2ValueReference},
+    x     ::AbstractVector{<:ForwardDiff.Dual}, 
+    u     ::AbstractVector{<:ForwardDiff.Dual},
+    u_refs::AbstractVector{<:fmi2ValueReference},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:fmi2ValueReference},
+    ec    ::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::Real)
+
+@grad_from_chainrules eval!(cRef::UInt64, 
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:UInt32},
+    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
+    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    u_refs::AbstractVector{<:UInt32},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:UInt32},
+    ec    ::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::Real)
 
 # x, p
 @ForwardDiff_frule eval!(cRef::UInt64,  
@@ -708,6 +884,35 @@ end
     ec_idcs::AbstractVector{<:fmi2ValueReference},
     t     ::ReverseDiff.TrackedReal)
 
+# ec, t
+@ForwardDiff_frule eval!(cRef::UInt64,  
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:fmi2ValueReference},
+    x     ::AbstractVector{<:Real}, 
+    u     ::AbstractVector{<:Real},
+    u_refs::AbstractVector{<:fmi2ValueReference},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:fmi2ValueReference},
+    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ForwardDiff.Dual)
+
+@grad_from_chainrules eval!(cRef::UInt64,  
+    dx    ::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmi2ValueReference},
+    y     ::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:UInt32},
+    x     ::AbstractVector{<:Real}, 
+    u     ::AbstractVector{<:Real},
+    u_refs::AbstractVector{<:UInt32},
+    p     ::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:UInt32},
+    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec_idcs::AbstractVector{<:fmi2ValueReference},
+    t     ::ReverseDiff.TrackedReal)
+
 # x, ec
 @ForwardDiff_frule eval!(cRef::UInt64,  
     dx    ::AbstractVector{<:Real},
@@ -846,6 +1051,9 @@ mutable struct FMU2Jacobian{C, T, F} <: FMU2Sensitivities
     #cache::FiniteDiff.JacobianCache
     #colors::
 
+    validations::Int
+    colorings::Int
+
     function FMU2Jacobian{T}(component::C, f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}, x_refs::Union{Vector{UInt32}, Symbol}) where {C, T}
 
         @assert !isa(f_refs, Tuple) || f_refs[1] == :indicators "`f_refs` is Tuple, it must be `:indicators`"
@@ -879,9 +1087,11 @@ mutable struct FMU2Jacobian{C, T, F} <: FMU2Sensitivities
         inst.mtx = zeros(T, f_len, x_len)
         inst.jvp = zeros(T, f_len)
         inst.vjp = zeros(T, x_len)
-
+        
         inst.valid = false
+        inst.validations = 0
         inst.colored = false
+        inst.colorings = 0
         
         return inst
     end
@@ -905,6 +1115,9 @@ mutable struct FMU2Gradient{C, T, F} <: FMU2Sensitivities
 
     #cache::FiniteDiff.GradientCache
     #colors::
+
+    validations::Int
+    colorings::Int
 
     function FMU2Gradient{T}(component::C, f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}, x_refs::Union{UInt32, Symbol}) where {C, T}
 
@@ -939,7 +1152,9 @@ mutable struct FMU2Gradient{C, T, F} <: FMU2Sensitivities
         inst.vgp = zeros(T, x_len)
 
         inst.valid = false
+        inst.validations = 0
         inst.colored = false
+        inst.colorings = 0
         
         return inst
     end
@@ -1012,6 +1227,7 @@ function validate!(jac::FMU2Jacobian, x::AbstractVector)
         FiniteDiff.finite_difference_jacobian!(jac.mtx, (_x, _dx) -> (jac.f(jac, _x, _dx)), x) # , cache)
     end
 
+    jac.validations += 1
     jac.valid = true 
     return nothing
 end
@@ -1026,19 +1242,51 @@ function validate!(grad::FMU2Gradient, x::Real)
         FiniteDiff.finite_difference_gradient!(grad.vec, (_x, _dx) -> (grad.f(grad, _x, _dx)), x) # , cache)
     end
 
+    grad.validations += 1
     grad.valid = true 
     return nothing
 end
     
-function color!(jac::FMU2Sensitivities)
+function color!(sens::FMU2Sensitivities)
     # ToDo
     # colors = SparseDiffTools.matrix_colors(sparsejac)
 
-    jac.colored = true 
+    sens.colorings += 1
+    sens.colored = true 
     return nothing
 end
 
-function update!(jac::FMU2Sensitivities, x)
+function ref_length(ref::AbstractArray)
+    return length(ref)
+end
+
+function ref_length(ref::Symbol)
+    if ref == :time 
+        return 1 
+    else
+        @assert false "unknwon ref symbol: $(ref)"
+    end
+end
+
+function ref_length(ref::Tuple)
+    @assert length(ref) == 2 "tuple ref length is $(length(ref)) != 2"
+    if ref[1] == :indicators 
+        return length(ref[2])
+    else
+        @assert false "unknwon tuple ref $(ref)"
+    end
+end
+
+function update!(jac::FMU2Jacobian, x)
+
+    if size(jac.mtx) != (ref_length(jac.f_refs), ref_length(jac.x_refs))
+        jac.mtx = similar(jac.mtx, ref_length(jac.f_refs), ref_length(jac.x_refs))
+        jac.jvp = similar(jac.jvp, ref_length(jac.f_refs))
+        jac.vjp = similar(jac.vjp, ref_length(jac.x_refs))
+        
+        jac.valid = false
+    end
+
     if !jac.valid
         validate!(jac, x)
     end
@@ -1049,23 +1297,46 @@ function update!(jac::FMU2Sensitivities, x)
     return nothing
 end
 
+function update!(gra::FMU2Gradient, x)
+
+    if length(gra.vec) != ref_length(gra.f_refs)
+        gra.vec = similar(gra.vec, ref_length(jac.f_refs))
+        gra.gvp = similar(gra.gvp, ref_length(jac.f_refs))
+        gra.vgp = similar(gra.vgp, ref_length(jac.x_refs))
+        
+        gra.valid = false
+    end
+
+    if !gra.valid
+        validate!(gra, x)
+    end
+
+    if !gra.colored
+        color!(gra)
+    end
+    return nothing
+end
+
 function jvp!(jac::FMU2Jacobian, x::AbstractVector, v::AbstractVector)
-    update!(jac, x)
+    FMISensitivity.update!(jac, x)
+    #return jac.mtx * v
     return mul!(jac.jvp, jac.mtx, v)
 end
 
 function vjp!(jac::FMU2Jacobian, x::AbstractVector, v::AbstractVector)
-    update!(jac, x)
+    FMISensitivity.update!(jac, x)
+    #return jac.mtx' * v 
     return mul!(jac.vjp, jac.mtx', v)
 end
 
 function gvp!(grad::FMU2Gradient, x, v)
-    update!(grad, x)
+    FMISensitivity.update!(grad, x)
+    #return grad.vec * v 
     return mul!(grad.gvp, grad.vec, v)
 end
 
 function vgp!(grad::FMU2Gradient, x, v)
-    update!(grad, x)
+    FMISensitivity.update!(grad, x)
     mul!(grad.vgp, grad.vec', v) 
     return grad.vgp[1]
 end

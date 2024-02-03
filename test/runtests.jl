@@ -29,8 +29,12 @@ function runtestsFMI2(exportingTool)
     end
 
     @testset "Testing FMUs exported from $exportingTool" begin
-        @testset "Sensitivities" begin
-            include("FMI2.jl")
+        @testset "Jacobians / Gradients" begin
+            include("FMI2/jacobians_gradients.jl")
+        end
+
+        @testset "Solution" begin
+            include("FMI2/solution.jl")
         end
     end
 end
