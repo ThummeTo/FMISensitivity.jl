@@ -8,8 +8,8 @@ using Test
 import Random
 using FMIZoo
 
-using FMIImport.FMICore: fmi2Integer, fmi2Boolean, fmi2Real, fmi2String
-using FMIImport.FMICore: FMU2_EXECUTION_CONFIGURATIONS
+using FMIImport.FMIBase.FMICore: fmi2Integer, fmi2Boolean, fmi2Real, fmi2String
+using FMIImport.FMIBase: FMU_EXECUTION_CONFIGURATIONS
 
 exportingToolsWindows = [("Dymola", "2022x")]
 exportingToolsLinux = [("Dymola", "2022x")]
@@ -22,12 +22,6 @@ function runtestsFMI2(exportingTool)
     EXPORTINGTOOL = exportingTool[1]
     EXPORTINGVERSION = exportingTool[2]
 
-    # enable assertions for warnings/errors for all default execution configurations 
-    for exec in FMU2_EXECUTION_CONFIGURATIONS
-        exec.assertOnError = true
-        exec.assertOnWarning = true
-    end
-
     @testset "Testing FMUs exported from $exportingTool" begin
         @testset "Jacobians / Gradients" begin
             include("FMI2/jacobians_gradients.jl")
@@ -37,6 +31,12 @@ function runtestsFMI2(exportingTool)
             include("FMI2/solution.jl")
         end
     end
+end
+
+# enable assertions for warnings/errors for all default execution configurations 
+for exec in FMU_EXECUTION_CONFIGURATIONS
+    exec.assertOnError = true
+    exec.assertOnWarning = true
 end
 
 @testset "FMIImport.jl" begin
