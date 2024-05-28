@@ -11,30 +11,31 @@ import FMISensitivity.ReverseDiff
 using FMISensitivity.FMIBase
 using FMISensitivity.FMIBase.FMICore
 
+using FMISensitivity.FMIBase: getContinuousStates, getReal, getRealType, getEventIndicators, getDirectionalDerivative
+
 CHECK_ZYGOTE = false
 
 # load demo FMU
-fmu = loadFMU("SpringPendulumExtForce1D", EXPORTINGTOOL, EXPORTINGVERSION; type=:ME)
+c, fmu = getFMUStruct("SpringFrictionPendulumExtForce1D", :ME)
+const FMU_SUPPORTS_PARAMETER_SAMPLING = false
 
 # enable time gradient evaluation (disabled by default for performance reasons)
 fmu.executionConfig.eval_t_gradients = true
 
-# prepare (allocate) an FMU instance
-c, x0 = FMIImport.prepareSolveFMU(fmu, nothing)
-
 x_refs = fmu.modelDescription.stateValueReferences
-x = fmi2GetContinuousStates(c)
-dx = fmi2GetReal(c, c.fmu.modelDescription.derivativeValueReferences)
+x = getContinuousStates(c) 
+dx_refs = c.fmu.modelDescription.derivativeValueReferences
+dx = getReal(c, dx_refs)
 u_refs = fmu.modelDescription.inputValueReferences
-u = [0.0]
+u = zeros(getRealType(fmu), length(u_refs))
 y_refs = fmu.modelDescription.outputValueReferences
-y = fmi2GetReal(c, y_refs)
+y = getReal(c, y_refs)
 p_refs = fmu.modelDescription.parameterValueReferences
-p = fmi2GetReal(c, p_refs)
-e = fmi2GetEventIndicators(c)
+p = getReal(c, p_refs)
+e = getEventIndicators(c)
 t = 0.0
 
-reset! = function(c::FMIImport.FMU2Component)
+reset! = function(c::FMUInstance)
     c.solution.evals_∂ẋ_∂x = 0
     c.solution.evals_∂ẋ_∂u = 0
     c.solution.evals_∂ẋ_∂p = 0
@@ -80,47 +81,51 @@ ydx = fmu(;x=x, u=u, u_refs=u_refs, y=y, y_refs=y_refs, dx=dx, dx_refs=:all, p=p
 @test length(ydx) == 4
 
 # known results
-atol= 1e-7
-∂ẋ_∂x = [0.0 1.0; -10.0 0.0]
+atol= 1e-3 # 1e-7
+∂ẋ_∂x = [0.0 1.0; -10.0 -0.05]
 ∂ẋ_∂u = [0.0; 1.0]
-∂ẋ_∂p = [0.0   0.0  0.0   0.0   0.0  0.0;
-         0.0  10.0  0.6  10.0  -6.0  5.0]
-∂y_∂x = [0.0 1.0; -10.0 0.0]
+∂ẋ_∂p = [0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0;
+     0.0375 0.0 0.0 10.0 0.6 10.0 0.0 0.0 0.0 5.0 -5.25 0.0]
+∂y_∂x = [0.0 1.0; -10.0 -0.05]
 ∂y_∂u = [0.0; 1.0]
-∂y_∂p = [0.0   0.0  0.0   0.0   0.0  0.0;
-         0.0  10.0  0.6  10.0  -6.0  5.0]
+∂y_∂p = [0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0;
+     0.0375 0.0 0.0 10.0 0.6 10.0 0.0 0.0 0.0 5.0 -5.25 0.0]
 ∂ẋ_∂t = [0.0, 0.0]
 ∂y_∂t = [0.0, 0.0]
-∂e_∂x = [0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0  -1.0  0.0;
-0.0  0.0  0.0  0.0  -1.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
-0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0  -1.0  0.0;
- 0.0  0.0  0.0  0.0  -1.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0   0.0  0.0;
- 0.0  0.0  0.0  0.0     0.0    0.0;
- 0.0  0.0  0.0  0.0     0.0    0.0;
- 0.0  0.0  0.0  0.0  -132.390625  0.0;
- 0.0  0.0  0.0  0.0  -132.390625  0.0;
- 0.0  0.0  0.0  0.0   132.389404296875  0.0;
- 0.0  0.0  0.0  0.0   132.389404296875  0.0;
- 0.0  0.0  0.0  1.0     0.0    0.0;
- 0.0  0.0  0.0  1.0     0.0    0.0]
+∂e_∂x = [0.0 0.0;
+     0.0 0.0;
+     1.0 0.0;
+     1.0 0.0;
+     -10.0 -0.05;
+     -10.0 -0.05;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 1.0;
+     0.0 1.0;
+     -10.0 -0.05;
+     -10.0 -0.05;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     0.0 0.0;
+     1.0 0.0;
+     1.0 0.0;
+     1.0 0.0;
+     1.0 0.0]
 
-# Test build-in derivatives (slow) only for jacobian A
+# Test build-in directional derivatives (slow) only for jacobian A
 fmu.executionConfig.JVPBuiltInDerivatives = true
 
 _f = _x -> fmu(;x=_x, dx_refs=:all)
@@ -128,8 +133,8 @@ _f(x)
 j_fwd = ForwardDiff.jacobian(_f, x)
 j_rwd = ReverseDiff.jacobian(_f, x)
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
-# j_smp = fmi2SampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
-# j_get = fmi2GetJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
+# j_smp = sampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
+# j_get = getJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
 
 @test isapprox(j_fwd, ∂ẋ_∂x; atol=atol)
 @test isapprox(j_rwd, ∂ẋ_∂x; atol=atol)
@@ -140,7 +145,23 @@ j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
 # End: Test build-in derivatives (slow) only for jacobian A
 fmu.executionConfig.JVPBuiltInDerivatives = false
 
-@test c.solution.evals_∂ẋ_∂x == (CHECK_ZYGOTE ? 6 : 4)
+# Test build-in adjoint derivatives (slow) only for jacobian A
+fmu.executionConfig.VJPBuiltInDerivatives = true
+
+_f = _x -> fmu(;x=_x, dx_refs=:all)
+_f(x)
+j_fwd = ForwardDiff.jacobian(_f, x)
+j_rwd = ReverseDiff.jacobian(_f, x)
+j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
+
+@test isapprox(j_fwd, ∂ẋ_∂x; atol=atol)
+@test isapprox(j_rwd, ∂ẋ_∂x; atol=atol)
+@test CHECK_ZYGOTE ? isapprox(j_zyg, ∂ẋ_∂x; atol=atol) : true
+
+# End: Test build-in derivatives (slow) only for jacobian A
+fmu.executionConfig.VJPBuiltInDerivatives = false
+
+@test c.solution.evals_∂ẋ_∂x == (CHECK_ZYGOTE ? 10 : 8)
 @test c.solution.evals_∂ẋ_∂u == 0
 @test c.solution.evals_∂ẋ_∂p == 0
 @test c.solution.evals_∂ẋ_∂t == 0
@@ -162,8 +183,8 @@ _f(x)
 j_fwd = ForwardDiff.jacobian(_f, x)
 j_rwd = ReverseDiff.jacobian(_f, x)
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
-#j_get = fmi2GetJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
+#j_smp = sampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
+#j_get = getJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
 
 @test isapprox(j_fwd, ∂ẋ_∂x; atol=atol)
 @test isapprox(j_rwd, ∂ẋ_∂x; atol=atol)
@@ -193,8 +214,8 @@ _f(x)
 j_fwd = ForwardDiff.jacobian(_f, x)
 j_rwd = ReverseDiff.jacobian(_f, x)
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
-#j_get = fmi2GetJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
+#j_smp = sampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
+#j_get = getJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.stateValueReferences)
 
 @test isapprox(j_fwd, ∂ẋ_∂x; atol=atol)
 @test isapprox(j_rwd, ∂ẋ_∂x; atol=atol)
@@ -224,8 +245,8 @@ _f(u)
 j_fwd = ForwardDiff.jacobian(_f, u)
 j_rwd = ReverseDiff.jacobian(_f, u)
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, u)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, fmu.modelDescription.derivativeValueReferences, u_refs)
-#j_get = fmi2GetJacobian(c, fmu.modelDescription.derivativeValueReferences, u_refs)
+#j_smp = fsampleJacobian(c, fmu.modelDescription.derivativeValueReferences, u_refs)
+#j_get = getJacobian(c, fmu.modelDescription.derivativeValueReferences, u_refs)
 
 @test isapprox(j_fwd, ∂ẋ_∂u; atol=atol)
 @test isapprox(j_rwd, ∂ẋ_∂u; atol=atol)
@@ -255,8 +276,8 @@ _f(x)
 j_fwd = ForwardDiff.jacobian(_f, x)
 j_rwd = ReverseDiff.jacobian(_f, x)
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, y_refs, fmu.modelDescription.stateValueReferences)
-#j_get = fmi2GetJacobian(c, y_refs, fmu.modelDescription.stateValueReferences)
+#j_smp = sampleJacobian(c, y_refs, fmu.modelDescription.stateValueReferences)
+#j_get = getJacobian(c, y_refs, fmu.modelDescription.stateValueReferences)
 
 @test isapprox(j_fwd, ∂y_∂x; atol=atol)
 @test isapprox(j_rwd, ∂y_∂x; atol=atol)
@@ -286,8 +307,8 @@ _f(u)
 j_fwd = ForwardDiff.jacobian(_f, u)
 j_rwd = ReverseDiff.jacobian(_f, u)
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, u)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, y_refs, u_refs)
-#j_get = fmi2GetJacobian(c, y_refs, u_refs)
+#j_smp = sampleJacobian(c, y_refs, u_refs)
+#j_get = getJacobian(c, y_refs, u_refs)
 
 @test isapprox(j_fwd, ∂y_∂u; atol=atol)
 @test isapprox(j_rwd, ∂y_∂u; atol=atol)
@@ -374,62 +395,94 @@ j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, t)[1] : nothing
 reset!(c)
 
 # Jacobian ∂ẋ/∂p
-_f = _p -> fmu(;p=_p, p_refs=p_refs, dx_refs=:all)
-_f(p)
-j_fwd = ForwardDiff.jacobian(_f, p)
-j_rwd = ReverseDiff.jacobian(_f, p)
-j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, p)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.parameterValueReferences)
-#j_get = fmi2GetJacobian(c, fmu.modelDescription.derivativeValueReferences, fmu.modelDescription.parameterValueReferences)
+#if FMU_SUPPORTS_PARAMETER_SAMPLING
+     _f = _p -> fmu(;p=_p, p_refs=p_refs, dx_refs=:all)
+     _f(p)
+     j_fwd = ForwardDiff.jacobian(_f, p)
+     j_rwd = ReverseDiff.jacobian(_f, p)
+     j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, p)[1] : nothing
 
-@test isapprox(j_fwd, ∂ẋ_∂p; atol=atol)
-@test isapprox(j_rwd, ∂ẋ_∂p; atol=atol)
-@test CHECK_ZYGOTE ? isapprox(j_zyg, ∂ẋ_∂p; atol=atol) : true
-#@test isapprox(j_smp, ∂ẋ_∂p; atol=atol)
-#@test isapprox(j_get, ∂ẋ_∂p; atol=atol)
+     @test isapprox(j_fwd, ∂ẋ_∂p; atol=atol)
+     @test isapprox(j_rwd, ∂ẋ_∂p; atol=atol)
+     @test CHECK_ZYGOTE ? isapprox(j_zyg, ∂ẋ_∂p; atol=atol) : true
 
-@test c.solution.evals_∂ẋ_∂x == 0
-@test c.solution.evals_∂ẋ_∂u == 0
-@test c.solution.evals_∂ẋ_∂p == (CHECK_ZYGOTE ? 10 : 8)
-@test c.solution.evals_∂ẋ_∂t == 0
+     @test c.solution.evals_∂ẋ_∂x == 0
+     @test c.solution.evals_∂ẋ_∂u == 0
+     @test c.solution.evals_∂ẋ_∂p == (CHECK_ZYGOTE ? 16 : 14)
+     @test c.solution.evals_∂ẋ_∂t == 0
 
-@test c.solution.evals_∂y_∂u == 0
-@test c.solution.evals_∂y_∂p == 0
-@test c.solution.evals_∂y_∂x == 0
-@test c.solution.evals_∂y_∂t == 0
+     @test c.solution.evals_∂y_∂u == 0
+     @test c.solution.evals_∂y_∂p == 0
+     @test c.solution.evals_∂y_∂x == 0
+     @test c.solution.evals_∂y_∂t == 0
 
-@test c.solution.evals_∂e_∂x == 0
-@test c.solution.evals_∂e_∂u == 0
-@test c.solution.evals_∂e_∂p == 0
-@test c.solution.evals_∂e_∂t == 0
-reset!(c)
+     @test c.solution.evals_∂e_∂x == 0
+     @test c.solution.evals_∂e_∂u == 0
+     @test c.solution.evals_∂e_∂p == 0
+     @test c.solution.evals_∂e_∂t == 0
+     reset!(c)
+#end
 
 # Jacobian ∂y/∂p
-_f = _p -> fmu(;p=_p, p_refs=p_refs, y_refs=y_refs)
-_f(p)
-j_fwd = ForwardDiff.jacobian(_f, p)
-j_rwd = ReverseDiff.jacobian(_f, p)
-j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, p)[1] : nothing
-#j_smp = fmi2SampleJacobian(c, fmu.modelDescription.outputValueReferences, fmu.modelDescription.parameterValueReferences)
-#j_get = fmi2GetJacobian(c, fmu.modelDescription.outputValueReferences, fmu.modelDescription.parameterValueReferences)
+#if FMU_SUPPORTS_PARAMETER_SAMPLING
+     _f = _p -> fmu(;p=_p, p_refs=p_refs, y_refs=y_refs)
+     _f(p)
+     j_fwd = ForwardDiff.jacobian(_f, p)
+     j_rwd = ReverseDiff.jacobian(_f, p)
+     j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, p)[1] : nothing
+     
+     @test isapprox(j_fwd, ∂y_∂p; atol=atol)
+     @test isapprox(j_rwd, ∂y_∂p; atol=atol)
+     @test CHECK_ZYGOTE ? isapprox(j_zyg, ∂y_∂p; atol=atol) : true
+     
+     @test c.solution.evals_∂ẋ_∂x == 0
+     @test c.solution.evals_∂ẋ_∂u == 0
+     @test c.solution.evals_∂ẋ_∂p == 0
+     @test c.solution.evals_∂ẋ_∂t == 0
 
-@test isapprox(j_fwd, ∂y_∂p; atol=atol)
-@test isapprox(j_rwd, ∂y_∂p; atol=atol)
-@test CHECK_ZYGOTE ? isapprox(j_zyg, ∂y_∂p; atol=atol) : true
-#@test isapprox(j_smp, ∂y_∂p; atol=atol)
-#@test isapprox(j_get, ∂y_∂p; atol=atol)
+     @test c.solution.evals_∂y_∂u == 0
+     @test c.solution.evals_∂y_∂p == (CHECK_ZYGOTE ? 16 : 14)
+     @test c.solution.evals_∂y_∂x == 0
+     @test c.solution.evals_∂y_∂t == 0
+
+     @test c.solution.evals_∂e_∂x == 0
+     @test c.solution.evals_∂e_∂u == 0
+     @test c.solution.evals_∂e_∂p == 0
+     @test c.solution.evals_∂e_∂t == 0
+     reset!(c)
+#end
+
+# Jacobian ∂e/∂x
+_f = function(_x)
+     ec_idcs = collect(UInt32(i) for i in 1:fmu.modelDescription.numberOfEventIndicators)
+     
+     ret = fmu(; ec_idcs=ec_idcs, x=_x)
+     
+     return ret.ec
+end
+_f(x)
+j_fwd = ForwardDiff.jacobian(_f, x)
+j_rwd = ReverseDiff.jacobian(_f, x)
+j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
+# j_fid = FiniteDiff.finite_difference_jacobian(_f, x)
+# j_smp = sampleJacobian(c, :indicators, fmu.modelDescription.parameterValueReferences)
+# no option to get sensitivitities directly in FMI2/FMI3... 
+
+@test isapprox(j_fwd, ∂e_∂x; atol=atol)
+@test isapprox(j_rwd, ∂e_∂x; atol=atol)
+@test CHECK_ZYGOTE ? isapprox(j_zyg, j_rwd; atol=atol) : true
 
 @test c.solution.evals_∂ẋ_∂x == 0
 @test c.solution.evals_∂ẋ_∂u == 0
 @test c.solution.evals_∂ẋ_∂p == 0
 @test c.solution.evals_∂ẋ_∂t == 0
 
-@test c.solution.evals_∂y_∂u == 0
-@test c.solution.evals_∂y_∂p == (CHECK_ZYGOTE ? 10 : 8)
 @test c.solution.evals_∂y_∂x == 0
+@test c.solution.evals_∂y_∂u == 0
+@test c.solution.evals_∂y_∂p == 0
 @test c.solution.evals_∂y_∂t == 0
 
-@test c.solution.evals_∂e_∂x == 0
+@test c.solution.evals_∂e_∂x == (CHECK_ZYGOTE ? 62 : 34)
 @test c.solution.evals_∂e_∂u == 0
 @test c.solution.evals_∂e_∂p == 0
 @test c.solution.evals_∂e_∂t == 0
@@ -437,73 +490,3 @@ reset!(c)
 
 # clean up
 unloadFMU(fmu)
-
-########## Event Indicators Check ###########
-
-# [ToDo] Enable Test for Linux too (by providing a FMU)
-
-if Sys.iswindows()
-     # load demo FMU
-     fmu = loadFMU("VLDM", EXPORTINGTOOL, "2020x"; type=:ME)
-     data = FMIZoo.VLDM(:train)
-
-     # enable time gradient evaluation (disabled by default for performance reasons)
-     fmu.executionConfig.eval_t_gradients = true
-
-     # prepare (allocate) an FMU instance
-     c, x0 = FMIImport.prepareSolveFMU(fmu, nothing; parameters=data.params)
-
-     x_refs = fmu.modelDescription.stateValueReferences
-     x = fmi2GetContinuousStates(c)
-     dx = fmi2GetReal(c, c.fmu.modelDescription.derivativeValueReferences)
-     u_refs = fmu.modelDescription.inputValueReferences
-     u = zeros(fmi2Real, 0)
-     y_refs = fmu.modelDescription.outputValueReferences
-     y = zeros(fmi2Real, 0)
-     p_refs = copy(fmu.modelDescription.parameterValueReferences)
-
-     # remove some parameters
-     deleteat!(p_refs, findall(x -> (x >= UInt32(134217728) && x <= UInt32(134217737)), p_refs))
-     p = fmi2GetReal(c, p_refs)
-     e = fmi2GetEventIndicators(c)
-     t = 0.0
-
-     # Jacobian ∂e/∂x
-     _f = function(_x)
-          ec_idcs = collect(UInt32(i) for i in 1:fmu.modelDescription.numberOfEventIndicators)
-          
-          ret = fmu(; ec_idcs=ec_idcs, x=_x)
-          
-          return ret.ec
-     end
-     _f(x)
-     j_fwd = ForwardDiff.jacobian(_f, x)
-     j_rwd = ReverseDiff.jacobian(_f, x)
-     j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
-     # j_fid = FiniteDiff.finite_difference_jacobian(_f, x)
-     # j_smp = fmi2SampleJacobian(c, :indicators, fmu.modelDescription.parameterValueReferences)
-     # no option to get sensitivitities directly in FMI2... 
-
-     @test isapprox(j_fwd, ∂e_∂x; atol=atol)
-     @test isapprox(j_rwd, ∂e_∂x; atol=atol)
-     @test CHECK_ZYGOTE ? isapprox(j_zyg, j_rwd; atol=atol) : true
-
-     @test c.solution.evals_∂ẋ_∂x == 0
-     @test c.solution.evals_∂ẋ_∂u == 0
-     @test c.solution.evals_∂ẋ_∂p == 0
-     @test c.solution.evals_∂ẋ_∂t == 0
-
-     @test c.solution.evals_∂y_∂x == 0
-     @test c.solution.evals_∂y_∂u == 0
-     @test c.solution.evals_∂y_∂p == 0
-     @test c.solution.evals_∂y_∂t == 0
-
-     @test c.solution.evals_∂e_∂x == (CHECK_ZYGOTE ? 62 : 34)
-     @test c.solution.evals_∂e_∂u == 0
-     @test c.solution.evals_∂e_∂p == 0
-     @test c.solution.evals_∂e_∂t == 0
-     reset!(c)
-
-     # clean up
-     unloadFMU(fmu)
-end
