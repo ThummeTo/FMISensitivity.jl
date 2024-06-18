@@ -11,40 +11,23 @@ import SciMLSensitivity: ForwardDiff
 import SciMLSensitivity: FiniteDiff
 import SciMLSensitivity: ReverseDiff
 import SciMLSensitivity: Zygote 
-import FMICore.ChainRulesCore
+
+import FMIBase.ChainRulesCore
+using FMIBase.ChainRulesCore: ZeroTangent, NoTangent, @thunk
 
 import ForwardDiffChainRules
-import ForwardDiffChainRules: @ForwardDiff_frule
-import SciMLSensitivity.ReverseDiff: @grad_from_chainrules
-import FMICore.ChainRulesCore: ZeroTangent, NoTangent, @thunk
-using FMICore: undual, unsense, untrack
+using ForwardDiffChainRules: @ForwardDiff_frule
+using SciMLSensitivity.ReverseDiff: @grad_from_chainrules
 
 using SciMLSensitivity.LinearAlgebra
 import SciMLSensitivity.SparseDiffTools
 
-import FMICore: invalidate!, check_invalidate!
+using FMIBase
+using FMIBase.FMICore
+using FMIBase: undual, unsense, untrack
 
-using FMICore
-
-function isZeroTangent(d)
-    return false
-end
-function isZeroTangent(d::ZeroTangent)
-    return true
-end
-function isZeroTangent(d::AbstractArray{<:ZeroTangent})
-    return true
-end
-
-# additional dispatch for ReverseDiff.jl 
-# import SciMLSensitivity.ReverseDiff: increment_deriv!, ZeroTangent
-# function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedReal, ::ZeroTangent)
-#     return nothing 
-# end
-# function ReverseDiff.increment_deriv!(::ReverseDiff.TrackedArray, ::ZeroTangent, ::Int64)
-#     return nothing 
-# end
-
-include("FMI2.jl")
+include("utils.jl")
+include("sense.jl")
+include("hotfixes.jl")
 
 end # module
