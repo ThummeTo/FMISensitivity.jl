@@ -1,7 +1,8 @@
 ![FMI.jl Logo](https://github.com/ThummeTo/FMI.jl/blob/main/logo/dark/fmijl_logo_640_320.png?raw=true  "FMI.jl Logo")
 # FMISensitivity.jl
 
-[![Run Tests](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/Test.yml/badge.svg)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/Test.yml)
+[![Test (latest)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/TestLatest.yml/badge.svg)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/TestLatest.yml) 
+[![Test (LTS)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/TestLTS.yml/badge.svg)](https://github.com/ThummeTo/FMISensitivity.jl/actions/workflows/TestLTS.yml)
 [![Coverage](https://codecov.io/gh/ThummeTo/FMISensitivity.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/ThummeTo/FMISensitivity.jl)
 [![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
 
