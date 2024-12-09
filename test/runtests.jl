@@ -65,6 +65,11 @@ end
                         include("solution.jl")
                     end
                 end
+
+                # this script requires additional libraries
+                # @testset "Performance" begin
+                #     include("performance.jl")
+                # end
             end
         end
     

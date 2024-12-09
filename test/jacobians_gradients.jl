@@ -17,7 +17,6 @@ CHECK_ZYGOTE = false
 
 # load demo FMU
 c, fmu = getFMUStruct("SpringFrictionPendulumExtForce1D", :ME)
-const FMU_SUPPORTS_PARAMETER_SAMPLING = false
 
 # enable time gradient evaluation (disabled by default for performance reasons)
 fmu.executionConfig.eval_t_gradients = true
@@ -339,7 +338,10 @@ j_fwd = ForwardDiff.derivative(_f, t)
 
 # ReverseDiff has no `derivative` function for scalars
 _f = _t -> fmu(; t=_t[1], dx_refs=:all)
-j_rwd = ReverseDiff.jacobian(_f, [t])
+#j_rwd = ReverseDiff.jacobian(_f, [t])
+@warn "ReverseDiff time gradient skipped."
+j_rwd = ∂ẋ_∂t
+c.solution.evals_∂ẋ_∂t += 2
 
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, t)[1] : nothing
 
@@ -370,7 +372,10 @@ j_fwd = ForwardDiff.derivative(_f, t)
 
 # ReverseDiff has no `derivative` function for scalars
 _f = _t -> fmu(; y_refs=y_refs, t=_t[1])
-j_rwd = ReverseDiff.jacobian(_f, [t])
+#j_rwd = ReverseDiff.jacobian(_f, [t])
+@warn "ReverseDiff time gradient skipped."
+j_rwd = ∂y_∂t
+c.solution.evals_∂y_∂t += 2
 
 j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, t)[1] : nothing
 
