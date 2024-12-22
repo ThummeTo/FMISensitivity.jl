@@ -5,10 +5,18 @@
 
 import FMIBase: eval!, invalidate!, check_invalidate!
 using FMIBase: getDirectionalDerivative!, getAdjointDerivative!
-using FMIBase: setContinuousStates, setInputs, setReal, setTime, setReal, getReal!, getEventIndicators!, getRealType
+using FMIBase:
+    setContinuousStates,
+    setInputs,
+    setReal,
+    setTime,
+    setReal,
+    getReal!,
+    getEventIndicators!,
+    getRealType
 
 # in FMI2 and FMI3 we can use fmi2GetDirectionalDerivative for JVP-computations
-function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu=nothing)
+function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
@@ -22,7 +30,10 @@ function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
     jac.f_refs = ∂f_refs
     jac.x_refs = ∂x_refs
 
-    if c.fmu.executionConfig.JVPBuiltInDerivatives && providesDirectionalDerivatives(c.fmu) && !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
+    if c.fmu.executionConfig.JVPBuiltInDerivatives &&
+       providesDirectionalDerivatives(c.fmu) &&
+       !isa(jac.f_refs, Tuple) &&
+       !isa(jac.x_refs, Symbol)
         getDirectionalDerivative!(c, ∂f_refs, ∂x_refs, seed, jac.jvp)
     else
         jvp!(jac, x, seed)
@@ -33,7 +44,7 @@ function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
     return nothing
 end
 
-function gvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu=nothing)
+function gvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
 
     grad = getfield(c, mtxCache)
     if isnothing(grad)
@@ -47,7 +58,10 @@ function gvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
     grad.f_refs = ∂f_refs
     grad.x_refs = ∂x_refs
 
-    if c.fmu.executionConfig.JVPBuiltInDerivatives && providesDirectionalDerivatives(c.fmu) && !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
+    if c.fmu.executionConfig.JVPBuiltInDerivatives &&
+       providesDirectionalDerivatives(c.fmu) &&
+       !isa(grad.f_refs, Tuple) &&
+       !isa(grad.x_refs, Symbol)
         getDirectionalDerivative!(c, ∂f_refs, ∂x_refs, [seed], grad.gvp)
     else
         gvp!(grad, x, seed)
@@ -59,7 +73,7 @@ function gvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
 end
 
 # in FMI2 there is no helper for VJP-computations (but in FMI3) ...
-function vjp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu=nothing)
+function vjp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
 
     jac = getfield(c, mtxCache)
     if isnothing(jac)
@@ -72,8 +86,11 @@ function vjp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
 
     jac.f_refs = ∂f_refs
     jac.x_refs = ∂x_refs
-    
-    if c.fmu.executionConfig.VJPBuiltInDerivatives && providesAdjointDerivatives(c.fmu) && !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
+
+    if c.fmu.executionConfig.VJPBuiltInDerivatives &&
+       providesAdjointDerivatives(c.fmu) &&
+       !isa(jac.f_refs, Tuple) &&
+       !isa(jac.x_refs, Symbol)
         getAdjointDerivative!(c, ∂f_refs, ∂x_refs, seed, jac.vjp)
     else
         vjp!(jac, x, seed)
@@ -84,7 +101,7 @@ function vjp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
     return nothing
 end
 
-function vgp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu=nothing)
+function vgp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
 
     grad = getfield(c, mtxCache)
     if isnothing(grad)
@@ -97,8 +114,11 @@ function vgp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
 
     grad.f_refs = ∂f_refs
     grad.x_refs = ∂x_refs
-    
-    if c.fmu.executionConfig.VJPBuiltInDerivatives && providesAdjointDerivatives(c.fmu) && !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
+
+    if c.fmu.executionConfig.VJPBuiltInDerivatives &&
+       providesAdjointDerivatives(c.fmu) &&
+       !isa(grad.f_refs, Tuple) &&
+       !isa(grad.x_refs, Symbol)
         getAdjointDerivative!(c, ∂f_refs, ∂x_refs, [seed], grad.vgp)
     else
         vgp!(grad, x, seed)
@@ -109,23 +129,38 @@ function vgp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; a
     return nothing
 end
 
-function ChainRulesCore.frule(Δtuple, 
-    ::typeof(FMIBase.eval!), 
-    cRef, 
+function ChainRulesCore.frule(
+    Δtuple,
+    ::typeof(FMIBase.eval!),
+    cRef,
     dx,
     dx_refs,
     y,
-    y_refs, 
+    y_refs,
     x,
     u,
     u_refs,
     p,
-    p_refs, 
-    ec, 
+    p_refs,
+    ec,
     ec_idcs,
-    t)
+    t,
+)
 
-    Δself, ΔcRef, Δdx, Δdx_refs, Δy, Δy_refs, Δx, Δu, Δu_refs, Δp, Δp_refs, Δec, Δec_idcs, Δt = Δtuple # undual ?
+    Δself,
+    ΔcRef,
+    Δdx,
+    Δdx_refs,
+    Δy,
+    Δy_refs,
+    Δx,
+    Δu,
+    Δu_refs,
+    Δp,
+    Δp_refs,
+    Δec,
+    Δec_idcs,
+    Δt = Δtuple # undual ?
 
     @debug "frule start"
 
@@ -136,7 +171,7 @@ function ChainRulesCore.frule(Δtuple,
         cRef = UInt64(cRef)
     end
     c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
-    
+
     # ToDo: is this necessary?
     # t = undual(t)
     # u = undual(u)
@@ -145,10 +180,11 @@ function ChainRulesCore.frule(Δtuple,
 
     dx_refs = unsense(dx_refs)
     dx_refs = convert(Array{UInt32,1}, dx_refs)
-    if length(dx_refs) == 0 && length(dx) == length(c.fmu.modelDescription.derivativeValueReferences) # all derivatives, please!
+    if length(dx_refs) == 0 &&
+       length(dx) == length(c.fmu.modelDescription.derivativeValueReferences) # all derivatives, please!
         dx_refs = c.fmu.modelDescription.derivativeValueReferences
     end
-    
+
     # [Note] `unsense` is necessary for AD over AD
     y_refs = unsense(y_refs)
     u_refs = unsense(u_refs)
@@ -158,8 +194,8 @@ function ChainRulesCore.frule(Δtuple,
     y_refs = convert(Array{UInt32,1}, y_refs)
     u_refs = convert(Array{UInt32,1}, u_refs)
     p_refs = convert(Array{UInt32,1}, p_refs)
-    ec_idcs = convert(Array{UInt32,1}, ec_idcs) 
-    
+    ec_idcs = convert(Array{UInt32,1}, ec_idcs)
+
     ###
 
     outputs = (length(y_refs) > 0)
@@ -171,7 +207,7 @@ function ChainRulesCore.frule(Δtuple,
     eventIndicators = (length(ec_idcs) > 0)
 
     Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
-    
+
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
     # if length(c.frule_output.y) != length(y)
@@ -204,17 +240,41 @@ function ChainRulesCore.frule(Δtuple,
 
         if states
             if derivatives
-                jvp!(c, :∂ẋ_∂x, dx_refs, c.fmu.modelDescription.stateValueReferences, x, Δx; accu=∂dx)
+                jvp!(
+                    c,
+                    :∂ẋ_∂x,
+                    dx_refs,
+                    c.fmu.modelDescription.stateValueReferences,
+                    x,
+                    Δx;
+                    accu = ∂dx,
+                )
                 c.solution.evals_∂ẋ_∂x += 1
             end
 
-            if outputs 
-                jvp!(c, :∂y_∂x, y_refs, c.fmu.modelDescription.stateValueReferences, x, Δx; accu=∂y)
+            if outputs
+                jvp!(
+                    c,
+                    :∂y_∂x,
+                    y_refs,
+                    c.fmu.modelDescription.stateValueReferences,
+                    x,
+                    Δx;
+                    accu = ∂y,
+                )
                 c.solution.evals_∂y_∂x += 1
             end
 
             if eventIndicators
-                jvp!(c, :∂e_∂x, (:indicators, ec_idcs), c.fmu.modelDescription.stateValueReferences, x, Δx; accu=∂e)
+                jvp!(
+                    c,
+                    :∂e_∂x,
+                    (:indicators, ec_idcs),
+                    c.fmu.modelDescription.stateValueReferences,
+                    x,
+                    Δx;
+                    accu = ∂e,
+                )
                 c.solution.evals_∂e_∂x += 1
             end
         end
@@ -224,17 +284,17 @@ function ChainRulesCore.frule(Δtuple,
 
         if inputs
             if derivatives
-                jvp!(c, :∂ẋ_∂u, dx_refs, u_refs, u, Δu; accu=∂dx)
+                jvp!(c, :∂ẋ_∂u, dx_refs, u_refs, u, Δu; accu = ∂dx)
                 c.solution.evals_∂ẋ_∂u += 1
             end
 
             if outputs
-                jvp!(c, :∂y_∂u, y_refs, u_refs, u, Δu; accu=∂y)
+                jvp!(c, :∂y_∂u, y_refs, u_refs, u, Δu; accu = ∂y)
                 c.solution.evals_∂y_∂u += 1
             end
 
             if eventIndicators
-                jvp!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, Δu; accu=∂e)
+                jvp!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, Δu; accu = ∂e)
                 c.solution.evals_∂e_∂u += 1
             end
         end
@@ -244,17 +304,17 @@ function ChainRulesCore.frule(Δtuple,
 
         if parameters
             if derivatives
-                jvp!(c, :∂ẋ_∂p, dx_refs, p_refs, p, Δp; accu=∂dx)
+                jvp!(c, :∂ẋ_∂p, dx_refs, p_refs, p, Δp; accu = ∂dx)
                 c.solution.evals_∂ẋ_∂p += 1
             end
 
             if outputs
-                jvp!(c, :∂y_∂p, y_refs, p_refs, p, Δp; accu=∂y)
+                jvp!(c, :∂y_∂p, y_refs, p_refs, p, Δp; accu = ∂y)
                 c.solution.evals_∂y_∂p += 1
             end
 
             if eventIndicators
-                jvp!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, Δp; accu=∂e)
+                jvp!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, Δp; accu = ∂e)
                 c.solution.evals_∂e_∂p += 1
             end
         end
@@ -262,19 +322,19 @@ function ChainRulesCore.frule(Δtuple,
 
     if Δt != NoTangent() && c.fmu.executionConfig.eval_t_gradients
 
-        if times 
+        if times
             if derivatives
-                gvp!(c, :∂ẋ_∂t, dx_refs, :time, t, Δt; accu=∂dx)
+                gvp!(c, :∂ẋ_∂t, dx_refs, :time, t, Δt; accu = ∂dx)
                 c.solution.evals_∂ẋ_∂t += 1
             end
 
             if outputs
-                gvp!(c, :∂y_∂t, y_refs, :time, t, Δt; accu=∂y)
+                gvp!(c, :∂y_∂t, y_refs, :time, t, Δt; accu = ∂y)
                 c.solution.evals_∂y_∂t += 1
             end
 
             if eventIndicators
-                gvp!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, Δt; accu=∂e)
+                gvp!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, Δt; accu = ∂e)
                 c.solution.evals_∂e_∂t += 1
             end
         end
@@ -284,37 +344,39 @@ function ChainRulesCore.frule(Δtuple,
 
     # [Note] Type Real is required for AD over AD
     ∂Ω = FMUEvaluationOutput{Real}() # Float64
-    ∂Ω.y  = ∂y
+    ∂Ω.y = ∂y
     ∂Ω.dx = ∂dx
     ∂Ω.ec = ∂e
 
-    return Ω, ∂Ω 
+    return Ω, ∂Ω
 end
 
-function ChainRulesCore.rrule(::typeof(FMIBase.eval!), 
-    cRef, 
+function ChainRulesCore.rrule(
+    ::typeof(FMIBase.eval!),
+    cRef,
     dx,
-    dx_refs, 
+    dx_refs,
     y,
-    y_refs, 
+    y_refs,
     x,
     u,
     u_refs,
     p,
     p_refs,
-    ec, 
-    ec_idcs, 
-    t)
+    ec,
+    ec_idcs,
+    t,
+)
 
     @assert !isa(cRef, FMUInstance) "Wrong dispatched!"
 
     @debug "rrule start: $((cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t))"
-      
+
     c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
 
     y_len = (isnothing(y_refs) ? 0 : length(y_refs))
     dx_len = (isnothing(dx) ? 0 : length(dx))
-    
+
     outputs = (length(y_refs) > 0)
     inputs = (length(u_refs) > 0)
     derivatives = (length(dx) > 0)
@@ -330,7 +392,7 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
     #        setting the corresponding snapshot (that holds all related quantities, including the discrete state)
     #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback separately,
     #        because they are evaluated at different points in time during ODE solving.
-    if length(c.solution.snapshots) > 0 
+    if length(c.solution.snapshots) > 0
         sn = getSnapshot(c.solution, t)
         if !isnothing(sn) # sometimes it is -Inf
             apply!(c, sn)
@@ -368,7 +430,7 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
 
         #println("$(t),")
 
-              # ȳ = nothing 
+        # ȳ = nothing 
         # d̄x = nothing
         # ēc = nothing
 
@@ -388,9 +450,9 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
         #         r̄[i] = 0.0 
         #     end
         # end
-        
+
         d̄x = @view(r̄[y_len+1:y_len+dx_len]) # r̄[1:dx_len] 
-        ȳ  = @view(r̄[1:y_len]) # r̄[dx_len+1:dx_len+y_len] 
+        ȳ = @view(r̄[1:y_len]) # r̄[dx_len+1:dx_len+y_len] 
         ēc = @view(r̄[y_len+dx_len+1:end]) # r̄[y_len+dx_len+1:end] 
 
         outputs = outputs && !isZeroTangent(ȳ)
@@ -441,68 +503,68 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
         ū = zeros(length(u)) #ZeroTangent()
         p̄ = zeros(length(p)) #eroTangent()
 
-        if derivatives 
+        if derivatives
             if states
-                vjp!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x; accu=x̄) 
+                vjp!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x; accu = x̄)
                 c.solution.evals_∂ẋ_∂x += 1
             end
 
             if inputs
-                vjp!(c, :∂ẋ_∂u, dx_refs, u_refs, u, d̄x; accu=ū) 
+                vjp!(c, :∂ẋ_∂u, dx_refs, u_refs, u, d̄x; accu = ū)
                 c.solution.evals_∂ẋ_∂u += 1
             end
 
             if parameters
-                vjp!(c, :∂ẋ_∂p, dx_refs, p_refs, p, d̄x; accu=p̄) 
+                vjp!(c, :∂ẋ_∂p, dx_refs, p_refs, p, d̄x; accu = p̄)
                 c.solution.evals_∂ẋ_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                vgp!(c, :∂ẋ_∂t, dx_refs, :time, t, d̄x; accu=t̄)  
+                vgp!(c, :∂ẋ_∂t, dx_refs, :time, t, d̄x; accu = t̄)
                 c.solution.evals_∂ẋ_∂t += 1
             end
         end
 
-        if outputs 
+        if outputs
             if states
-                vjp!(c, :∂y_∂x, y_refs, x_refs, x, ȳ; accu=x̄)  
+                vjp!(c, :∂y_∂x, y_refs, x_refs, x, ȳ; accu = x̄)
                 c.solution.evals_∂y_∂x += 1
             end
-        
+
             if inputs
-                vjp!(c, :∂y_∂u, y_refs, u_refs, u, ȳ; accu=ū) 
+                vjp!(c, :∂y_∂u, y_refs, u_refs, u, ȳ; accu = ū)
                 c.solution.evals_∂y_∂u += 1
             end
 
             if parameters
-                vjp!(c, :∂y_∂p, y_refs, p_refs, p, ȳ; accu=p̄) 
+                vjp!(c, :∂y_∂p, y_refs, p_refs, p, ȳ; accu = p̄)
                 c.solution.evals_∂y_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                vgp!(c, :∂y_∂t, y_refs, :time, t, ȳ; accu=t̄) 
+                vgp!(c, :∂y_∂t, y_refs, :time, t, ȳ; accu = t̄)
                 c.solution.evals_∂y_∂t += 1
             end
         end
 
         if eventIndicators
             if states
-                vjp!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc; accu=x̄)  
+                vjp!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc; accu = x̄)
                 c.solution.evals_∂e_∂x += 1
             end
 
             if inputs
-                vjp!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, ēc; accu=ū) 
+                vjp!(c, :∂e_∂u, (:indicators, ec_idcs), u_refs, u, ēc; accu = ū)
                 c.solution.evals_∂e_∂u += 1
             end
 
             if parameters
-                vjp!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc; accu=p̄) 
+                vjp!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc; accu = p̄)
                 c.solution.evals_∂e_∂p += 1
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
-                vgp!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, ēc; accu=t̄)  
+                vgp!(c, :∂e_∂t, (:indicators, ec_idcs), :time, t, ēc; accu = t̄)
                 c.solution.evals_∂e_∂t += 1
             end
         end
@@ -521,9 +583,24 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
         ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
-        
+
         # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
-        return (f̄, c̄Ref, d̄x, d̄x_refs, ȳ, ȳ_refs, x̄, ū, ū_refs, p̄, p̄_refs, ēc, ēc_idcs, t̄)
+        return (
+            f̄,
+            c̄Ref,
+            d̄x,
+            d̄x_refs,
+            ȳ,
+            ȳ_refs,
+            x̄,
+            ū,
+            ū_refs,
+            p̄,
+            p̄_refs,
+            ēc,
+            ēc_idcs,
+            t̄,
+        )
     end
 
     @debug "rrule end: $((Ω, eval_pullback))"
@@ -532,474 +609,538 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
 end
 
 # dx, y, x, u, p, ec, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64, 
-    dx    ::AbstractVector{<:ForwardDiff.Dual},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:ForwardDiff.Dual},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:ForwardDiff.Dual},
+    y::AbstractVector{<:ForwardDiff.Dual},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:ForwardDiff.Dual},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:ForwardDiff.Dual},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p::AbstractVector{<:ForwardDiff.Dual},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64, 
-    dx    ::AbstractVector{<:ReverseDiff.TrackedReal},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:ReverseDiff.TrackedReal},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    y::AbstractVector{<:ReverseDiff.TrackedReal},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:ReverseDiff.TrackedReal},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p::AbstractVector{<:ReverseDiff.TrackedReal},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # dx, y, x, u, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64, 
-    dx    ::AbstractVector{<:ForwardDiff.Dual},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:ForwardDiff.Dual},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:ForwardDiff.Dual},
+    y::AbstractVector{<:ForwardDiff.Dual},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:ForwardDiff.Dual},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:ForwardDiff.Dual},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64, 
-    dx    ::AbstractVector{<:ReverseDiff.TrackedReal},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:ReverseDiff.TrackedReal},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    y::AbstractVector{<:ReverseDiff.TrackedReal},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:ReverseDiff.TrackedReal},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # x, u
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64, 
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:ForwardDiff.Dual},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:ForwardDiff.Dual},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64, 
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:ReverseDiff.TrackedReal},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # x, p
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p::AbstractVector{<:ForwardDiff.Dual},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p::AbstractVector{<:ReverseDiff.TrackedReal},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # x
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # u
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:ForwardDiff.Dual},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:ForwardDiff.Dual},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:ReverseDiff.TrackedReal},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real}, 
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # p
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p::AbstractVector{<:ForwardDiff.Dual},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p::AbstractVector{<:ReverseDiff.TrackedReal},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # ec
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # x, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # x, ec, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # ec, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:Real}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:Real},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # x, ec
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:Real},
+    p::AbstractVector{<:Real},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # x, p, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p::AbstractVector{<:ForwardDiff.Dual},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p::AbstractVector{<:ReverseDiff.TrackedReal},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:Real},
+    ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # x, p, ec, t
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p::AbstractVector{<:ForwardDiff.Dual},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ForwardDiff.Dual)
+    t::ForwardDiff.Dual,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p::AbstractVector{<:ReverseDiff.TrackedReal},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::ReverseDiff.TrackedReal)
+    t::ReverseDiff.TrackedReal,
+)
 
 # x, p, ec
-@ForwardDiff_frule FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:fmiValueReference},
-    x     ::AbstractVector{<:ForwardDiff.Dual}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:fmiValueReference},
-    p     ::AbstractVector{<:ForwardDiff.Dual},
+    p::AbstractVector{<:ForwardDiff.Dual},
     p_refs::AbstractVector{<:fmiValueReference},
-    ec    ::AbstractVector{<:ForwardDiff.Dual},
+    ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
-@grad_from_chainrules FMIBase.eval!(cRef::UInt64,  
-    dx    ::AbstractVector{<:Real},
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
     dx_refs::AbstractVector{<:fmiValueReference},
-    y     ::AbstractVector{<:Real},
+    y::AbstractVector{<:Real},
     y_refs::AbstractVector{<:UInt32},
-    x     ::AbstractVector{<:ReverseDiff.TrackedReal}, 
-    u     ::AbstractVector{<:Real},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:Real},
     u_refs::AbstractVector{<:UInt32},
-    p     ::AbstractVector{<:ReverseDiff.TrackedReal},
+    p::AbstractVector{<:ReverseDiff.TrackedReal},
     p_refs::AbstractVector{<:UInt32},
-    ec    ::AbstractVector{<:ReverseDiff.TrackedReal},
+    ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
-    t     ::Real)
+    t::Real,
+)
 
 # FiniteDiff Jacobians
 
 abstract type FMUSensitivities end
 
-mutable struct FMUJacobian{C, T, F} <: FMUSensitivities
+mutable struct FMUJacobian{C,T,F} <: FMUSensitivities
     valid::Bool
     colored::Bool
     instance::C
@@ -1008,11 +1149,11 @@ mutable struct FMUJacobian{C, T, F} <: FMUSensitivities
     jvp::Vector{T}
     vjp::Vector{T}
 
-    f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}
-    x_refs::Union{Vector{UInt32}, Symbol}
-    f_refs_set::Union{Set, Nothing}
+    f_refs::Union{Vector{UInt32},Tuple{Symbol,Vector{UInt32}}}
+    x_refs::Union{Vector{UInt32},Symbol}
+    f_refs_set::Union{Set,Nothing}
 
-    f::F 
+    f::F
 
     #cache::FiniteDiff.JacobianCache
     #colors::
@@ -1020,7 +1161,11 @@ mutable struct FMUJacobian{C, T, F} <: FMUSensitivities
     validations::Int
     colorings::Int
 
-    function FMUJacobian{T}(instance::C, f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}, x_refs::Union{Vector{UInt32}, Symbol}) where {C, T}
+    function FMUJacobian{T}(
+        instance::C,
+        f_refs::Union{Vector{UInt32},Tuple{Symbol,Vector{UInt32}}},
+        x_refs::Union{Vector{UInt32},Symbol},
+    ) where {C,T}
 
         @assert !isa(f_refs, Tuple) || f_refs[1] == :indicators "`f_refs` is Tuple, it must be `:indicators`"
         @assert !isa(x_refs, Symbol) || x_refs == :time "`x_refs` is Symbol, it must be `:time`"
@@ -1043,28 +1188,28 @@ mutable struct FMUJacobian{C, T, F} <: FMUSensitivities
 
         F = typeof(f)
 
-        inst = new{C, T, F}()
+        inst = new{C,T,F}()
         inst.f = f
         inst.instance = instance
         inst.f_refs = f_refs
         inst.f_refs_set = f_refs_set
         inst.x_refs = x_refs
-        
+
         inst.mtx = zeros(T, f_len, x_len)
         inst.jvp = zeros(T, f_len)
         inst.vjp = zeros(T, x_len)
-        
+
         inst.valid = false
         inst.validations = 0
         inst.colored = false
         inst.colorings = 0
-        
+
         return inst
     end
 
-end 
+end
 
-mutable struct FMUGradient{C, T, F} <: FMUSensitivities
+mutable struct FMUGradient{C,T,F} <: FMUSensitivities
     valid::Bool
     colored::Bool
     instance::C
@@ -1073,11 +1218,11 @@ mutable struct FMUGradient{C, T, F} <: FMUSensitivities
     gvp::Vector{T}
     vgp::Vector{T}
 
-    f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}
-    x_refs::Union{Vector{UInt32}, Symbol}
-    f_refs_set::Union{Set, Nothing}
+    f_refs::Union{Vector{UInt32},Tuple{Symbol,Vector{UInt32}}}
+    x_refs::Union{Vector{UInt32},Symbol}
+    f_refs_set::Union{Set,Nothing}
 
-    f::F 
+    f::F
 
     #cache::FiniteDiff.GradientCache
     #colors::
@@ -1085,7 +1230,11 @@ mutable struct FMUGradient{C, T, F} <: FMUSensitivities
     validations::Int
     colorings::Int
 
-    function FMUGradient{T}(instance::C, f_refs::Union{Vector{UInt32}, Tuple{Symbol, Vector{UInt32}}}, x_refs::Union{UInt32, Symbol}) where {C, T}
+    function FMUGradient{T}(
+        instance::C,
+        f_refs::Union{Vector{UInt32},Tuple{Symbol,Vector{UInt32}}},
+        x_refs::Union{UInt32,Symbol},
+    ) where {C,T}
 
         @assert !isa(f_refs, Tuple) || f_refs[1] == :indicators "`f_refs` is Tuple, it must be `:indicators`"
         @assert !isa(x_refs, Symbol) || x_refs == :time "`x_refs` is Symbol, it must be `:time`"
@@ -1106,13 +1255,13 @@ mutable struct FMUGradient{C, T, F} <: FMUSensitivities
 
         F = typeof(f)
 
-        inst = new{C, T, F}()
+        inst = new{C,T,F}()
         inst.f = f
         inst.instance = instance
         inst.f_refs = f_refs
         inst.f_refs_set = f_refs_set
         inst.x_refs = x_refs
-        
+
         inst.vec = zeros(T, f_len)
         inst.gvp = zeros(T, f_len)
         inst.vgp = zeros(T, x_len)
@@ -1121,62 +1270,62 @@ mutable struct FMUGradient{C, T, F} <: FMUSensitivities
         inst.validations = 0
         inst.colored = false
         inst.colorings = 0
-        
+
         return inst
     end
 
-end 
+end
 
 function f_∂v_∂v(jac::FMUJacobian, dx, x)
-    setReal(jac.instance, jac.x_refs, x; track=false)
+    setReal(jac.instance, jac.x_refs, x; track = false)
     getReal!(jac.instance, jac.f_refs, dx)
     return dx
 end
 
 function f_∂e_∂v(jac::FMUJacobian, dx, x)
-    setReal(jac.instance, jac.x_refs, x; track=false)
+    setReal(jac.instance, jac.x_refs, x; track = false)
     getEventIndicators!(jac.instance, dx, jac.f_refs[2])
     return dx
 end
 
 function f_∂e_∂t(jac::FMUGradient, dx, x)
-    setTime(jac.instance, x; track=false)
+    setTime(jac.instance, x; track = false)
     getEventIndicators!(jac.instance, dx, jac.f_refs[2])
     return dx
 end
 
 function f_∂v_∂t(jac::FMUGradient, dx, x)
-    setTime(jac.instance, x; track=false)
+    setTime(jac.instance, x; track = false)
     getReal!(jac.instance, jac.f_refs, dx)
     return dx
 end
 
 function FMIBase.invalidate!(sens::FMUSensitivities)
-    sens.valid = false 
-    return nothing 
+    sens.valid = false
+    return nothing
 end
 
 function FMIBase.check_invalidate!(vrs, sens::FMUSensitivities)
     if !sens.valid
-        return 
+        return
     end
 
     if isnothing(sens.f_refs_set)
-        return 
+        return
     end
 
     for vr ∈ vrs
-        if vr ∈ sens.f_refs_set 
+        if vr ∈ sens.f_refs_set
             invalidate!(sens)
         end
     end
 
-    return nothing 
+    return nothing
 end
 
 function uncolor!(jac::FMUSensitivities)
-    jac.colored = false 
-    return nothing 
+    jac.colored = false
+    return nothing
 end
 
 function onehot!(seed, i::Integer) # [ToDo] this could be solved without allocations
@@ -1190,59 +1339,95 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
     rows = length(jac.f_refs)
     cols = length(jac.x_refs)
 
-    if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative && providesDirectionalDerivatives(jac.instance.fmu) && !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
+    if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative &&
+       providesDirectionalDerivatives(jac.instance.fmu) &&
+       !isa(jac.f_refs, Tuple) &&
+       !isa(jac.x_refs, Symbol)
         # ToDo: use directional derivatives with sparsitiy information!
         # ToDo: Optimize allocation (onehot)
         # [Note] Jacobian is sampled column by column
 
         seed = zeros(getRealType(jac.instance), cols)
 
-        for i in 1:cols
-            getDirectionalDerivative!(jac.instance, jac.f_refs, jac.x_refs, onehot!(seed, i), view(jac.mtx, 1:rows, i))
+        for i = 1:cols
+            getDirectionalDerivative!(
+                jac.instance,
+                jac.f_refs,
+                jac.x_refs,
+                onehot!(seed, i),
+                view(jac.mtx, 1:rows, i),
+            )
         end
-    elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative && providesAdjointDerivatives(jac.instance.fmu) && !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
+    elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative &&
+           providesAdjointDerivatives(jac.instance.fmu) &&
+           !isa(jac.f_refs, Tuple) &&
+           !isa(jac.x_refs, Symbol)
         # ToDo: use directional derivatives with sparsitiy information!
         # ToDo: Optimize allocation (onehot)
         # [Note] Jacobian is sampled row by row
 
         seed = zeros(getRealType(jac.instance), rows)
 
-        for i in 1:rows
-            getAdjointDerivative!(jac.instance, jac.f_refs, jac.x_refs, onehot!(seed, i), view(jac.mtx, 1:cols, i))
+        for i = 1:rows
+            getAdjointDerivative!(
+                jac.instance,
+                jac.f_refs,
+                jac.x_refs,
+                onehot!(seed, i),
+                view(jac.mtx, 1:cols, i),
+            )
         end
     else #if jac.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
         # cache = FiniteDiff.JacobianCache(x)
-        FiniteDiff.finite_difference_jacobian!(jac.mtx, (_x, _dx) -> (jac.f(jac, _x, _dx)), x) # , cache)
-    # else
-    #     @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
+        FiniteDiff.finite_difference_jacobian!(
+            jac.mtx,
+            (_x, _dx) -> (jac.f(jac, _x, _dx)),
+            x,
+        ) # , cache)
+        # else
+        #     @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
     end
 
     jac.validations += 1
-    jac.valid = true 
+    jac.valid = true
     return nothing
 end
 
 function validate!(grad::FMUGradient, x::Real)
 
-    if grad.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative && providesDirectionalDerivatives(grad.instance.fmu) && !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
+    if grad.instance.fmu.executionConfig.sensitivity_strategy ==
+       :FMIDirectionalDerivative &&
+       providesDirectionalDerivatives(grad.instance.fmu) &&
+       !isa(grad.f_refs, Tuple) &&
+       !isa(grad.x_refs, Symbol)
         # ToDo: use directional derivatives with sparsitiy information!
-        getDirectionalDerivative!(grad.instance, grad.f_refs, grad.x_refs, ones(length(jac.f_refs)), grad.vec)
+        getDirectionalDerivative!(
+            grad.instance,
+            grad.f_refs,
+            grad.x_refs,
+            ones(length(jac.f_refs)),
+            grad.vec,
+        )
     else #if grad.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
         # cache = FiniteDiff.GradientCache(x)
-        FiniteDiff.finite_difference_gradient!(grad.vec, (_x, _dx) -> (grad.f(grad, _x, _dx)), x) # , cache)
+        FiniteDiff.finite_difference_gradient!(
+            grad.vec,
+            (_x, _dx) -> (grad.f(grad, _x, _dx)),
+            x,
+        ) # , cache)
     end
 
     grad.validations += 1
-    grad.valid = true 
+    grad.valid = true
     return nothing
 end
-    
+
 function color!(sens::FMUSensitivities)
     # ToDo
     # colors = SparseDiffTools.matrix_colors(sparsejac)
 
     sens.colorings += 1
-    sens.colored = true 
+    sens.colored = true
     return nothing
 end
 
@@ -1251,8 +1436,8 @@ function ref_length(ref::AbstractArray)
 end
 
 function ref_length(ref::Symbol)
-    if ref == :time 
-        return 1 
+    if ref == :time
+        return 1
     else
         @assert false "unknwon ref symbol: $(ref)"
     end
@@ -1260,7 +1445,7 @@ end
 
 function ref_length(ref::Tuple)
     @assert length(ref) == 2 "tuple ref length is $(length(ref)) != 2"
-    if ref[1] == :indicators 
+    if ref[1] == :indicators
         return length(ref[2])
     else
         @assert false "unknwon tuple ref $(ref)"
@@ -1270,11 +1455,11 @@ end
 function update!(jac::FMUJacobian, x)
 
     if size(jac.mtx) != (ref_length(jac.f_refs), ref_length(jac.x_refs))
-    #if length(jac.mtx) != ref_length(jac.f_refs) * ref_length(jac.x_refs) # this is cheaper
+        #if length(jac.mtx) != ref_length(jac.f_refs) * ref_length(jac.x_refs) # this is cheaper
         jac.mtx = similar(jac.mtx, ref_length(jac.f_refs), ref_length(jac.x_refs))
         jac.jvp = similar(jac.jvp, ref_length(jac.f_refs))
         jac.vjp = similar(jac.vjp, ref_length(jac.x_refs))
-        
+
         jac.valid = false
     end
 
@@ -1294,7 +1479,7 @@ function update!(gra::FMUGradient, x)
         gra.vec = similar(gra.vec, ref_length(jac.f_refs))
         gra.gvp = similar(gra.gvp, ref_length(jac.f_refs))
         gra.vgp = similar(gra.vgp, ref_length(jac.x_refs))
-        
+
         gra.valid = false
     end
 
@@ -1308,29 +1493,29 @@ function update!(gra::FMUGradient, x)
     return nothing
 end
 
-function jvp!(jac::FMUJacobian, x::AbstractVector, v::AbstractVector; jvp=jac.jvp)
+function jvp!(jac::FMUJacobian, x::AbstractVector, v::AbstractVector; jvp = jac.jvp)
     FMISensitivity.update!(jac, x)
     #return jac.mtx * v
     mul!(jvp, jac.mtx, v)
     return nothing
 end
 
-function vjp!(jac::FMUJacobian, x::AbstractVector, v::AbstractVector; vjp=jac.vjp)
+function vjp!(jac::FMUJacobian, x::AbstractVector, v::AbstractVector; vjp = jac.vjp)
     FMISensitivity.update!(jac, x)
     #return jac.mtx' * v 
     mul!(vjp, jac.mtx', v)
     return nothing
 end
 
-function gvp!(grad::FMUGradient, x, v; gvp=grad.gvp)
+function gvp!(grad::FMUGradient, x, v; gvp = grad.gvp)
     FMISensitivity.update!(grad, x)
     #return grad.vec * v 
     mul!(gvp, grad.vec, v)
     return nothing
 end
 
-function vgp!(grad::FMUGradient, x, v, vgp=grad.vgp)
+function vgp!(grad::FMUGradient, x, v, vgp = grad.vgp)
     FMISensitivity.update!(grad, x)
-    mul!(vgp, grad.vec', v) 
+    mul!(vgp, grad.vec', v)
     return nothing
 end

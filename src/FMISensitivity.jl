@@ -10,7 +10,7 @@ import SciMLSensitivity
 import SciMLSensitivity: ForwardDiff
 import SciMLSensitivity: FiniteDiff
 import SciMLSensitivity: ReverseDiff
-import SciMLSensitivity: Zygote 
+import SciMLSensitivity: Zygote
 
 import FMIBase.ChainRulesCore
 using FMIBase.ChainRulesCore: ZeroTangent, NoTangent, @thunk
