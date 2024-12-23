@@ -5,7 +5,7 @@
 
 # this is temporary until it's implemented in native Julia, see:
 # https://discourse.julialang.org/t/debug-has-massive-performance-impact/103974/19
-using Logging 
+using Logging
 if Sys.iswindows()
     Logging.disable_logging(Logging.Debug)
 end
@@ -18,9 +18,9 @@ c, fmu = getFMUStruct("BouncingBall1D", :ME, "Dymola", "2022x")
 function evalBenchmark(b)
     res = run(b)
     min_time = min(res.times...)
-    memory = res.memory 
+    memory = res.memory
     allocs = res.allocs
-    return min_time, memory, allocs 
+    return min_time, memory, allocs
 end
 
 ########## f(x) evaluation / right-hand side ########## 
@@ -44,12 +44,38 @@ ec = zeros(fmi2Real, 0)
 ec_idcs = zeros(fmi2ValueReference, 0)
 t = NO_fmi2Real
 
-b = @benchmarkable FMI.eval!($cRef, $dx, $dx_refs, $y, $y_refs, $x, $u, $u_refs, $p, $p_refs, $ec, $ec_idcs, $t)
+b = @benchmarkable FMI.eval!(
+    $cRef,
+    $dx,
+    $dx_refs,
+    $y,
+    $y_refs,
+    $x,
+    $u,
+    $u_refs,
+    $p,
+    $p_refs,
+    $ec,
+    $ec_idcs,
+    $t,
+)
 min_time, memory, allocs = evalBenchmark(b)
 @test allocs <= 0
 @test memory <= 0
 
-b = @benchmarkable $c(dx=$dx, y=$y, y_refs=$y_refs, x=$x, u=$u, u_refs=$u_refs, p=$p, p_refs=$p_refs, ec=$ec, ec_idcs=$ec_idcs, t=$t)
+b = @benchmarkable $c(
+    dx = $dx,
+    y = $y,
+    y_refs = $y_refs,
+    x = $x,
+    u = $u,
+    u_refs = $u_refs,
+    p = $p,
+    p_refs = $p_refs,
+    ec = $ec,
+    ec_idcs = $ec_idcs,
+    t = $t,
+)
 min_time, memory, allocs = evalBenchmark(b)
 @test allocs <= 9   # `ignore_derivatives` causes an extra 3 allocations (48 bytes)
 @test memory <= 224  # ToDo: What are the remaining allocations compared to `eval!`?

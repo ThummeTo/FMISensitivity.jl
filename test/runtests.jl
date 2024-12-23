@@ -20,20 +20,28 @@ for exec in FMU_EXECUTION_CONFIGURATIONS
     exec.assertOnWarning = true
 end
 
-function getFMUStruct(modelname, mode, tool=ENV["EXPORTINGTOOL"], version=ENV["EXPORTINGVERSION"], fmiversion=ENV["FMIVERSION"], fmustruct=ENV["FMUSTRUCT"]; kwargs...)
-    
+function getFMUStruct(
+    modelname,
+    mode,
+    tool = ENV["EXPORTINGTOOL"],
+    version = ENV["EXPORTINGVERSION"],
+    fmiversion = ENV["FMIVERSION"],
+    fmustruct = ENV["FMUSTRUCT"];
+    kwargs...,
+)
+
     # choose FMU or FMUComponent
     if endswith(modelname, ".fmu")
         fmu = loadFMU(modelname; kwargs...)
     else
-        fmu = loadFMU(modelname, tool, version, fmiversion; kwargs...) 
+        fmu = loadFMU(modelname, tool, version, fmiversion; kwargs...)
     end
 
     if fmustruct == "FMU"
         return fmu, fmu
 
     elseif fmustruct == "FMUCOMPONENT"
-        inst, _ = FMIImport.prepareSolveFMU(fmu, nothing, mode; loggingOn=true)
+        inst, _ = FMIImport.prepareSolveFMU(fmu, nothing, mode; loggingOn = true)
         @test !isnothing(inst)
         return inst, fmu
 
@@ -45,7 +53,7 @@ end
 @testset "FMIImport.jl" begin
     if Sys.iswindows() || Sys.islinux()
         @info "Automated testing is supported on Windows/Linux."
-        
+
         ENV["EXPORTINGTOOL"] = "Dymola"
         ENV["EXPORTINGVERSION"] = "2023x"
 
@@ -60,7 +68,7 @@ end
                     @testset "Jacobians / Gradients" begin
                         include("jacobians_gradients.jl")
                     end
-            
+
                     @testset "Solution" begin
                         include("solution.jl")
                     end
@@ -72,7 +80,7 @@ end
                 # end
             end
         end
-    
+
     elseif Sys.isapple()
         @warn "Test-sets are currrently using Windows- and Linux-FMUs, automated testing for macOS is currently not supported."
     end
