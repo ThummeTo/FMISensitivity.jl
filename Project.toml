@@ -11,5 +11,5 @@ SciMLSensitivity = "1ed8b502-d754-442c-8d5d-10ac956f44a1"
 [compat]
 FMIBase = "1.0.0"
 ForwardDiffChainRules = "0.2.0"
-SciMLSensitivity = "7.0 - 7.71" # "7.0 - 7.67"
+SciMLSensitivity = "7.0 - 7.71, 7"
 julia = "1.6"
