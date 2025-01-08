@@ -6,6 +6,9 @@ on:
   pull_request:
 jobs:
   CompatHelper:
+    permissions:
+      contents: write
+      pages: write
     runs-on: ubuntu-latest
     steps:
       - name: Install CompatHelper
