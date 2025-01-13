@@ -8,7 +8,7 @@ on:
       lookback:
         default: 3
 permissions:
-  actions: read
+  actions: write
   checks: read
   contents: write
   deployments: read
