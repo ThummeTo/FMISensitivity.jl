@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       lookback:
-        default: 3
+        default: 40
 permissions:
-  actions: read
+  actions: write
   checks: read
   contents: write
   deployments: read
