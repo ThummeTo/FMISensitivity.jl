@@ -1,13 +1,14 @@
 name: TagBot
 on:
   push:
+  pull_request:
   issue_comment:
     types:
       - created
   workflow_dispatch:
     inputs:
       lookback:
-        default: 40
+        default: 3
 permissions:
   actions: write
   checks: read
@@ -23,11 +24,12 @@ permissions:
   statuses: read
 jobs:
   TagBot:
-    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot'
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'JuliaTagBot' || github.actor == '0815Creeper'
     runs-on: ubuntu-latest
     steps:
       - uses: JuliaRegistries/TagBot@v1
         with:
+          lookback: 40
           token: ${{ secrets.GITHUB_TOKEN }}
           # Edit the following line to reflect the actual name of the GitHub Secret containing your private key
           ssh: ${{ secrets.DOCUMENTER_KEY }}
