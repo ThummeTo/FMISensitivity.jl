@@ -1,7 +1,7 @@
 name = "FMISensitivity"
 uuid = "3e748fe5-cd7f-4615-8419-3159287187d2"
 authors = ["TT <tobias.thummerer@informatik.uni-augsburg.de>", "LM <lars.mikelsons@informatik.uni-augsburg.de>"]
-version = "0.2.3"
+version = "0.2.4"
 
 [deps]
 FMIBase = "900ee838-d029-460e-b485-d98a826ceef2"
