@@ -519,6 +519,7 @@ function ChainRulesCore.rrule(::typeof(FMIBase.eval!),
         d̄x = zeros(length(dx)) # ZeroTangent()
         ȳ = zeros(length(y)) # ZeroTangent()
         ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
+        t̄ = t̄[1]
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
         
