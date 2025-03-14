@@ -4,7 +4,7 @@
 #
 
 import FMIBase: eval!, invalidate!, check_invalidate!
-using FMIBase: getDirectionalDerivative!, getAdjointDerivative!
+using FMIBase: getDirectionalDerivative!, getAdjointDerivative!, sampleDirectionalDerivative!
 using FMIBase:
     setContinuousStates,
     setInputs,
@@ -13,7 +13,7 @@ using FMIBase:
     setReal,
     getReal!,
     getEventIndicators!,
-    getRealType
+    getRealType, startSampling, stopSampling
 
 # in FMI2 and FMI3 we can use fmi2GetDirectionalDerivative for JVP-computations
 function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
@@ -377,32 +377,59 @@ function ChainRulesCore.rrule(
     y_len = (isnothing(y_refs) ? 0 : length(y_refs))
     dx_len = (isnothing(dx) ? 0 : length(dx))
 
-    outputs = (length(y_refs) > 0)
+    _outputs = (length(y_refs) > 0)
+    _derivatives = (length(dx) > 0)
+    _eventIndicators = (length(ec) > 0)
+    
     inputs = (length(u_refs) > 0)
-    derivatives = (length(dx) > 0)
     states = (length(x) > 0)
-    times = (t >= 0.0)
+    times = (t >= 0.0) # ToDo: better default value
     parameters = (length(p_refs) > 0)
-    eventIndicators = (length(ec) > 0)
 
     # [ToDo] remove!
     # x = unsense(x)
 
-    # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
-    #        setting the corresponding snapshot (that holds all related quantities, including the discrete state)
-    #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback separately,
-    #        because they are evaluated at different points in time during ODE solving.
-    if length(c.solution.snapshots) > 0
-        sn = getSnapshot(c.solution, t)
-        if !isnothing(sn) # sometimes it is -Inf
-            apply!(c, sn)
+    # two strategies for `snapshotEveryStep`: 
+    # (false) use the closest snapshot, change values to the current state etc. -> might be difficult with nasty algebraic loops!
+    # (true) make snapshots for every time step (more secure, more memory)
+    snapshotEveryStep = true
+    pullback_snapshot = nothing
+
+    if snapshotEveryStep
+        # capture state
+        startSampling(c)
+        
+        # change, make snapshot
+        Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+        pullback_snapshot = snapshot!(c)
+        
+        # re-set original state to persue simulation
+        stopSampling(c)
+    else
+        # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
+        #        setting the corresponding snapshot (that holds all related quantities, including the discrete state)
+        #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback separately,
+        #        because they are (or might be) evaluated at different points in time during ODE solving.
+        if length(c.solution.snapshots) > 0
+            sn = getSnapshot(c.solution, t)
+            if !isnothing(sn) # sometimes it is -Inf
+                apply!(c, sn)
+            end
         end
+
+        Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+
+        # [ToDo] maybe the arrays change between pullback creation and use! check this!
+        x = copy(x)
+        p = copy(p)
+        u = copy(u)
+        # dx = copy(dx)
+        # y = copy(y)
+        # ec = copy(ec)
     end
 
-    Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
-
     # [ToDo] remove this copy
-    Ω = copy(Ω)
+    # Ω = copy(Ω)
 
     # if t < 1.0
     #     @assert dx[2] <= 0.0 "$(dx[2]) for t=$(t)"
@@ -413,20 +440,14 @@ function ChainRulesCore.rrule(
 
     ##############
 
-    # [ToDo] maybe the arrays change between pullback creation and use! check this!
-    x = copy(x)
-    p = copy(p)
-    u = copy(u)
-    # dx = copy(dx)
-    # y = copy(y)
-    # ec = copy(ec)
-
     if dx_len > 0 && length(dx_refs) == 0 # all derivatives, please!
         dx_refs = c.fmu.modelDescription.derivativeValueReferences
     end
     x_refs = c.fmu.modelDescription.stateValueReferences
 
     function eval_pullback(r̄)
+
+        @debug "eval pullback start"
 
         #println("$(t),")
 
@@ -455,9 +476,9 @@ function ChainRulesCore.rrule(
         ȳ = @view(r̄[1:y_len]) # r̄[dx_len+1:dx_len+y_len] 
         ēc = @view(r̄[y_len+dx_len+1:end]) # r̄[y_len+dx_len+1:end] 
 
-        outputs = outputs && !isZeroTangent(ȳ)
-        derivatives = derivatives && !isZeroTangent(d̄x)
-        eventIndicators = eventIndicators && !isZeroTangent(ēc)
+        outputs = _outputs && !isZeroTangent(ȳ)
+        derivatives = _derivatives && !isZeroTangent(d̄x)
+        eventIndicators = _eventIndicators && !isZeroTangent(ēc)
 
         if !isa(ȳ, AbstractArray)
             ȳ = collect(ȳ) # [ȳ...]
@@ -471,31 +492,37 @@ function ChainRulesCore.rrule(
             ēc = collect(ēc) # [ēc...]
         end
 
-        # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
-        #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
-        #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
-        #        set during pullback evaluation. (discrete FMU state might change during simulation)
-        if length(c.solution.snapshots) > 0 # c.t != t 
-            sn = getSnapshot(c.solution, t)
-            apply!(c, sn)
-        end
+        if snapshotEveryStep
+            startSampling(c)
+            apply!(c, pullback_snapshot)
+        else
+            # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
+            #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
+            #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
+            #        set during pullback evaluation. (discrete FMU state might change during simulation)
+            if length(c.solution.snapshots) > 0 # c.t != t 
+                sn = getSnapshot(c.solution, t)
+                apply!(c, sn)
+            end
 
-        # [ToDo] Not everything is still needed (from the setters)
-        #        These lines could be replaced by an `eval!` call?
-        if states && !c.fmu.isZeroState # && c.x != x 
-            setContinuousStates(c, x)
-        end
+            # [ToDo] Not everything is still needed (from the setters)
+            #        These lines could be replaced by an `eval!` call?
+            #        Already part of the snapshot?
+            if states && !c.fmu.isZeroState # && c.x != x 
+                setContinuousStates(c, x)
+            end
 
-        if inputs ## && c.u != u
-            setInputs(c, u_refs, u)
-        end
+            if inputs ## && c.u != u
+                setInputs(c, u_refs, u)
+            end
 
-        if parameters && c.fmu.executionConfig.set_p_every_step
-            setReal(c, p_refs, p)
-        end
+            if parameters && c.fmu.executionConfig.set_p_every_step
+                setReal(c, p_refs, p)
+            end
 
-        if times # && c.t != t
-            setTime(c, t)
+            if times # && c.t != t
+                setTime(c, t)
+            end
         end
 
         x̄ = zeros(length(x)) #ZeroTangent()
@@ -578,12 +605,17 @@ function ChainRulesCore.rrule(
         ū_refs = [] # ZeroTangent()
         p̄_refs = [] # ZeroTangent()
 
-        d̄x = zeros(length(dx)) # ZeroTangent()
-        ȳ = zeros(length(y)) # ZeroTangent()
-        ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
         t̄ = t̄[1]
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
+
+        if snapshotEveryStep
+            stopSampling(c)
+        end
+
+        d̄x = zeros(length(dx)) # ZeroTangent()
+        ȳ = zeros(length(y)) # ZeroTangent()
+        ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
 
         # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
         return (
@@ -706,6 +738,39 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+)
+
+# x, u, t
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmiValueReference},
+    y::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:fmiValueReference},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:ForwardDiff.Dual},
+    u_refs::AbstractVector{<:fmiValueReference},
+    p::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:fmiValueReference},
+    ec::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmiValueReference},
+    t::ForwardDiff.Dual,
+)
+
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmiValueReference},
+    y::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:UInt32},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:ReverseDiff.TrackedReal},
+    u_refs::AbstractVector{<:UInt32},
+    p::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:UInt32},
+    ec::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmiValueReference},
+    t::ReverseDiff.TrackedReal,
 )
 
 # x, p
@@ -1340,53 +1405,60 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
     rows = length(jac.f_refs)
     cols = length(jac.x_refs)
 
-    if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative &&
-       providesDirectionalDerivatives(jac.instance.fmu) &&
-       !isa(jac.f_refs, Tuple) &&
-       !isa(jac.x_refs, Symbol)
-        # ToDo: use directional derivatives with sparsitiy information!
-        # ToDo: Optimize allocation (onehot)
-        # [Note] Jacobian is sampled column by column
+    # only VR to VR value references can be sampled using built-in functions in FMI
+    if !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
+        if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative && providesDirectionalDerivatives(jac.instance.fmu) 
+        
+            # ToDo: use directional derivatives with sparsitiy information!
+            # ToDo: Optimize allocation (onehot)
+            # [Note] Jacobian is sampled column by column
 
-        seed = zeros(getRealType(jac.instance), cols)
+            seed = zeros(getRealType(jac.instance), cols)
 
-        for i = 1:cols
-            getDirectionalDerivative!(
-                jac.instance,
-                jac.f_refs,
-                jac.x_refs,
-                onehot!(seed, i),
-                view(jac.mtx, 1:rows, i),
-            )
+            for i = 1:cols
+                status = getDirectionalDerivative!(
+                    jac.instance,
+                    jac.f_refs,
+                    jac.x_refs,
+                    onehot!(seed, i),
+                    view(jac.mtx, 1:rows, i),
+                )
+            end
+        elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative && providesAdjointDerivatives(jac.instance.fmu) 
+            
+            # ToDo: use directional derivatives with sparsitiy information!
+            # ToDo: Optimize allocation (onehot)
+            # [Note] Jacobian is sampled row by row
+
+            seed = zeros(getRealType(jac.instance), rows)
+
+            for i = 1:rows
+                getAdjointDerivative!(
+                    jac.instance,
+                    jac.f_refs,
+                    jac.x_refs,
+                    onehot!(seed, i),
+                    view(jac.mtx, 1:cols, i),
+                )
+            end
+        elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
+            # ToDo: also use FiniteDiff here!
+            #finite_diff_jacobian!(jac, x)
+
+            seed = zeros(getRealType(jac.instance), cols)
+
+            for i = 1:cols
+                sampleDirectionalDerivative!(jac.instance,
+                    jac.f_refs,
+                    jac.x_refs,
+                    onehot!(seed, i),
+                    view(jac.mtx, 1:rows, i); Δx=jac.instance.fmu.executionConfig.finitediff_absstep)
+            end
+        else
+            @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
         end
-    elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative &&
-           providesAdjointDerivatives(jac.instance.fmu) &&
-           !isa(jac.f_refs, Tuple) &&
-           !isa(jac.x_refs, Symbol)
-        # ToDo: use directional derivatives with sparsitiy information!
-        # ToDo: Optimize allocation (onehot)
-        # [Note] Jacobian is sampled row by row
-
-        seed = zeros(getRealType(jac.instance), rows)
-
-        for i = 1:rows
-            getAdjointDerivative!(
-                jac.instance,
-                jac.f_refs,
-                jac.x_refs,
-                onehot!(seed, i),
-                view(jac.mtx, 1:cols, i),
-            )
-        end
-    else #if jac.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
-        # cache = FiniteDiff.JacobianCache(x)
-        FiniteDiff.finite_difference_jacobian!(
-            jac.mtx,
-            (_x, _dx) -> (jac.f(jac, _x, _dx)),
-            x,
-        ) # , cache)
-        # else
-        #     @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
+    else
+        finite_diff_jacobian!(jac, x)
     end
 
     jac.validations += 1
@@ -1394,28 +1466,78 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
     return nothing
 end
 
+function finite_diff_jacobian!(jac, x)
+
+    # FMUs remember their state, therefore me need to check the state before sampling ...
+    x_old = FMIBase.getReal(jac.instance, jac.x_refs)
+
+    # cache = FiniteDiff.JacobianCache(x)
+    fdtype = jac.instance.fmu.executionConfig.finitediff_fdtype
+
+    # this is FIniteDiff default behaviour
+    relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
+    absstep = relstep 
+
+    if jac.instance.fmu.executionConfig.finitediff_relstep >= 0.0
+        relstep = jac.instance.fmu.executionConfig.finitediff_relstep
+    end
+
+    if jac.instance.fmu.executionConfig.finitediff_absstep >= 0.0
+        absstep = jac.instance.fmu.executionConfig.finitediff_absstep
+    end
+
+    FiniteDiff.finite_difference_jacobian!(
+        jac.mtx,
+        (_x, _dx) -> jac.f(jac, _x, _dx),
+        x, fdtype; relstep=relstep, absstep=absstep
+    ) # , cache)
+
+    # ... and set it afterwards
+    FMIBase.setReal(jac.instance, jac.x_refs, x_old)
+    return nothing
+end
+
+function finite_diff_gradient!(grad, x)
+
+     # FMUs remember their state, therefore me need to check the state before sampling ...
+     x_old = FMIBase.getReal(grad.instance, grad.x_refs)
+
+    # cache = FiniteDiff.GradientCache(x)
+    FiniteDiff.finite_difference_gradient!(
+        grad.vec,
+        (_x, _dx) -> (grad.f(grad, _x, _dx)),
+        x,
+    ) # , cache)
+
+    # ... and set it afterwards
+    FMIBase.setReal(grad.instance, grad.x_refs, x_old)
+    return nothing
+end
+
 function validate!(grad::FMUGradient, x::Real)
 
-    if grad.instance.fmu.executionConfig.sensitivity_strategy ==
-       :FMIDirectionalDerivative &&
-       providesDirectionalDerivatives(grad.instance.fmu) &&
-       !isa(grad.f_refs, Tuple) &&
-       !isa(grad.x_refs, Symbol)
-        # ToDo: use directional derivatives with sparsitiy information!
-        getDirectionalDerivative!(
-            grad.instance,
-            grad.f_refs,
-            grad.x_refs,
-            ones(length(jac.f_refs)),
-            grad.vec,
-        )
-    else #if grad.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
-        # cache = FiniteDiff.GradientCache(x)
-        FiniteDiff.finite_difference_gradient!(
-            grad.vec,
-            (_x, _dx) -> (grad.f(grad, _x, _dx)),
-            x,
-        ) # , cache)
+    if !isa(grad.f_refs, Tuple) &&
+        !isa(grad.x_refs, Symbol)
+
+        if grad.instance.fmu.executionConfig.sensitivity_strategy ==
+        :FMIDirectionalDerivative &&
+        providesDirectionalDerivatives(grad.instance.fmu)
+        
+            # ToDo: use directional derivatives with sparsitiy information!
+            getDirectionalDerivative!(
+                grad.instance,
+                grad.f_refs,
+                grad.x_refs,
+                ones(length(jac.f_refs)),
+                grad.vec,
+            )
+        elseif grad.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
+            finite_diff_gradient!(grad, x)
+        else
+            @assert false "Unknown sensitivity strategy `$(grad.instance.fmu.executionConfig.sensitivity_strategy)`."
+        end
+    else
+        finite_diff_gradient!(grad, x)
     end
 
     grad.validations += 1
