@@ -202,7 +202,7 @@ function ChainRulesCore.frule(
     inputs = (length(u_refs) > 0)
     derivatives = (length(dx) > 0)
     states = (length(x) > 0)
-    times = (t >= 0.0)
+    times = FMIBase.isSetReal(c.fmu, t)
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec_idcs) > 0)
 
@@ -383,7 +383,7 @@ function ChainRulesCore.rrule(
     
     inputs = (length(u_refs) > 0)
     states = (length(x) > 0)
-    times = (t >= 0.0) # ToDo: better default value
+    times = FMIBase.isSetReal(c.fmu, t)
     parameters = (length(p_refs) > 0)
 
     # [ToDo] remove!
@@ -401,6 +401,7 @@ function ChainRulesCore.rrule(
         
         # change, make snapshot
         Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+        #pullback_snapshot = snapshot_if_needed!(c, t) 
         pullback_snapshot = snapshot!(c)
         
         # re-set original state to persue simulation
@@ -1442,10 +1443,11 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
                 )
             end
         elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
-            # ToDo: also use FiniteDiff here!
-            #finite_diff_jacobian!(jac, x)
 
             seed = zeros(getRealType(jac.instance), cols)
+
+            # ToDo: also use FiniteDiff here!
+            #finite_diff_jacobian!(jac, x)
 
             for i = 1:cols
                 sampleDirectionalDerivative!(jac.instance,
@@ -1469,12 +1471,14 @@ end
 function finite_diff_jacobian!(jac, x)
 
     # FMUs remember their state, therefore me need to check the state before sampling ...
-    x_old = FMIBase.getReal(jac.instance, jac.x_refs)
+    if !isa(jac.x_refs, Symbol)
+        x_old = FMIBase.getReal(jac.instance, jac.x_refs)
+    end
 
     # cache = FiniteDiff.JacobianCache(x)
     fdtype = jac.instance.fmu.executionConfig.finitediff_fdtype
 
-    # this is FIniteDiff default behaviour
+    # this is FiniteDiff default behaviour
     relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
     absstep = relstep 
 
@@ -1486,31 +1490,59 @@ function finite_diff_jacobian!(jac, x)
         absstep = jac.instance.fmu.executionConfig.finitediff_absstep
     end
 
+    #@info "x: $(x)"
+    #@info "size(jac.mtx): $(size(jac.mtx))"
+
+    #jac.mtx = transpose(jac.mtx)
+
     FiniteDiff.finite_difference_jacobian!(
         jac.mtx,
-        (_x, _dx) -> jac.f(jac, _x, _dx),
+        (_dx, _x) -> jac.f(jac, _dx, _x),
         x, fdtype; relstep=relstep, absstep=absstep
     ) # , cache)
 
+    #jac.mtx = transpose(jac.mtx)
+
     # ... and set it afterwards
-    FMIBase.setReal(jac.instance, jac.x_refs, x_old)
+    if !isa(jac.x_refs, Symbol)
+        FMIBase.setReal(jac.instance, jac.x_refs, x_old)
+    end
     return nothing
 end
 
 function finite_diff_gradient!(grad, x)
 
-     # FMUs remember their state, therefore me need to check the state before sampling ...
-     x_old = FMIBase.getReal(grad.instance, grad.x_refs)
+    # FMUs remember their state, therefore me need to check the state before sampling ...
+    if !isa(grad.x_refs, Symbol)
+        x_old = FMIBase.getReal(grad.instance, grad.x_refs)
+    end
+
+    # cache = FiniteDiff.JacobianCache(x)
+    fdtype = grad.instance.fmu.executionConfig.finitediff_fdtype
+
+    # this is FiniteDiff default behaviour
+    relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
+    absstep = relstep 
+
+    if grad.instance.fmu.executionConfig.finitediff_relstep >= 0.0
+        relstep = grad.instance.fmu.executionConfig.finitediff_relstep
+    end
+
+    if grad.instance.fmu.executionConfig.finitediff_absstep >= 0.0
+        absstep = grad.instance.fmu.executionConfig.finitediff_absstep
+    end
 
     # cache = FiniteDiff.GradientCache(x)
     FiniteDiff.finite_difference_gradient!(
         grad.vec,
-        (_x, _dx) -> (grad.f(grad, _x, _dx)),
-        x,
+        (_dx, _x) -> (grad.f(grad, _dx, _x)),
+        x, fdtype; relstep=relstep, absstep=absstep
     ) # , cache)
 
     # ... and set it afterwards
-    FMIBase.setReal(grad.instance, grad.x_refs, x_old)
+    if !isa(grad.x_refs, Symbol)
+        FMIBase.setReal(grad.instance, grad.x_refs, x_old)
+    end
     return nothing
 end
 
@@ -1519,8 +1551,7 @@ function validate!(grad::FMUGradient, x::Real)
     if !isa(grad.f_refs, Tuple) &&
         !isa(grad.x_refs, Symbol)
 
-        if grad.instance.fmu.executionConfig.sensitivity_strategy ==
-        :FMIDirectionalDerivative &&
+        if grad.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative &&
         providesDirectionalDerivatives(grad.instance.fmu)
         
             # ToDo: use directional derivatives with sparsitiy information!

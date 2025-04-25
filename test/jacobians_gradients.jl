@@ -193,6 +193,38 @@ fmu.executionConfig.VJPBuiltInDerivatives = false
 @test c.solution.evals_∂e_∂t == 0
 reset!(c)
 
+# Test custom finite differences sampling instead of directionalDerivative 
+fmu.executionConfig.sensitivity_strategy = :FiniteDiff
+
+_f = _x -> fmu(; x = _x, dx_refs = :all)
+_f(x)
+j_fwd = ForwardDiff.jacobian(_f, x)
+j_rwd = ReverseDiff.jacobian(_f, x)
+j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
+
+@test isapprox(j_fwd, ∂ẋ_∂x; atol = atol)
+@test isapprox(j_rwd, ∂ẋ_∂x; atol = atol)
+@test CHECK_ZYGOTE ? isapprox(j_zyg, ∂ẋ_∂x; atol = atol) : true
+
+# End: Test custom finite differences sampling instead of directionalDerivative 
+fmu.executionConfig.sensitivity_strategy = :FMIDirectionalDerivative
+
+@test c.solution.evals_∂ẋ_∂x == 4
+@test c.solution.evals_∂ẋ_∂u == 0
+@test c.solution.evals_∂ẋ_∂p == 0
+@test c.solution.evals_∂ẋ_∂t == 0
+
+@test c.solution.evals_∂y_∂x == 0
+@test c.solution.evals_∂y_∂u == 0
+@test c.solution.evals_∂y_∂p == 0
+@test c.solution.evals_∂y_∂t == 0
+
+@test c.solution.evals_∂e_∂x == 0
+@test c.solution.evals_∂e_∂u == 0
+@test c.solution.evals_∂e_∂p == 0
+@test c.solution.evals_∂e_∂t == 0
+reset!(c)
+
 # Jacobian A=∂dx/∂x (out-of-plcae)
 _f = _x -> fmu(; x = _x, dx_refs = :all)
 _f(x)
