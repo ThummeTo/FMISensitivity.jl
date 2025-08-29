@@ -1343,28 +1343,30 @@ mutable struct FMUGradient{C,T,F} <: FMUSensitivities
 
 end
 
-function f_∂v_∂v(jac::FMUJacobian, dx, x)
+function f_∂v_∂v(jac::FMUJacobian, f, x)
     setReal(jac.instance, jac.x_refs, x; track = false)
-    getReal!(jac.instance, jac.f_refs, dx)
-    return dx
+    getReal!(jac.instance, jac.f_refs, f)
+    return f
 end
 
-function f_∂e_∂v(jac::FMUJacobian, dx, x)
+function f_∂e_∂v(jac::FMUJacobian, f, x)
+    symbol, f_refs = jac.f_refs
+    @assert symbol == :indicators "Called `f_∂e_∂v` but f_refs is not in event indicator shape."
     setReal(jac.instance, jac.x_refs, x; track = false)
-    getEventIndicators!(jac.instance, dx, jac.f_refs[2])
-    return dx
+    getEventIndicators!(jac.instance, f, f_refs)
+    return f
 end
 
-function f_∂e_∂t(jac::FMUGradient, dx, x)
+function f_∂e_∂t(jac::FMUGradient, f, x)
     setTime(jac.instance, x; track = false)
-    getEventIndicators!(jac.instance, dx, jac.f_refs[2])
-    return dx
+    getEventIndicators!(jac.instance, f, jac.f_refs[2])
+    return f
 end
 
-function f_∂v_∂t(jac::FMUGradient, dx, x)
+function f_∂v_∂t(jac::FMUGradient, f, x)
     setTime(jac.instance, x; track = false)
-    getReal!(jac.instance, jac.f_refs, dx)
-    return dx
+    getReal!(jac.instance, jac.f_refs, f)
+    return f
 end
 
 function FMIBase.invalidate!(sens::FMUSensitivities)
@@ -1495,10 +1497,11 @@ function finite_diff_jacobian!(jac, x)
 
     #jac.mtx = transpose(jac.mtx)
 
+    # ToDo: for setting `fdtype`, a weird error message is generated (looks like a different sampling pattern)
     FiniteDiff.finite_difference_jacobian!(
         jac.mtx,
         (_dx, _x) -> jac.f(jac, _dx, _x),
-        x, fdtype; relstep=relstep, absstep=absstep
+        x, fdtype; relstep=relstep, absstep=absstep # 
     ) # , cache)
 
     #jac.mtx = transpose(jac.mtx)
