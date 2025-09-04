@@ -397,15 +397,18 @@ function ChainRulesCore.rrule(
 
     if snapshotEveryStep
         # capture state
-        startSampling(c)
-        
+        # startSampling(c)
+        # tmp_snapshot = snapshot!(c)
+
         # change, make snapshot
         Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
         #pullback_snapshot = snapshot_if_needed!(c, t) 
         pullback_snapshot = snapshot!(c)
         
         # re-set original state to persue simulation
-        stopSampling(c)
+        # stopSampling(c)
+        # apply!(c, tmp_snapshot)
+        # freeSnapshot!(tmp_snapshot)
     else
         # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
         #        setting the corresponding snapshot (that holds all related quantities, including the discrete state)
@@ -493,8 +496,11 @@ function ChainRulesCore.rrule(
             ēc = collect(ēc) # [ēc...]
         end
 
+        tmp_snapshot_inner = nothing
         if snapshotEveryStep
-            startSampling(c)
+            # startSampling(c)
+            tmp_snapshot_inner = snapshot!(c)
+            
             apply!(c, pullback_snapshot)
         else
             # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
@@ -611,7 +617,9 @@ function ChainRulesCore.rrule(
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
 
         if snapshotEveryStep
-            stopSampling(c)
+            # stopSampling(c)
+            apply!(c, tmp_snapshot_inner)
+            freeSnapshot!(tmp_snapshot_inner)
         end
 
         d̄x = zeros(length(dx)) # ZeroTangent()
