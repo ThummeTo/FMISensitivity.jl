@@ -498,8 +498,8 @@ function ChainRulesCore.rrule(
 
         tmp_snapshot_inner = nothing
         if snapshotEveryStep
-            # startSampling(c)
-            tmp_snapshot_inner = snapshot!(c)
+            startSampling(c)
+            #tmp_snapshot_inner = snapshot!(c)
             
             apply!(c, pullback_snapshot)
         else
@@ -617,9 +617,10 @@ function ChainRulesCore.rrule(
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
 
         if snapshotEveryStep
-            # stopSampling(c)
-            apply!(c, tmp_snapshot_inner)
-            freeSnapshot!(tmp_snapshot_inner)
+            stopSampling(c)
+            
+            #apply!(c, tmp_snapshot_inner)
+            #freeSnapshot!(tmp_snapshot_inner)
         end
 
         d̄x = zeros(length(dx)) # ZeroTangent()
