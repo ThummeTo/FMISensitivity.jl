@@ -392,16 +392,16 @@ function ChainRulesCore.rrule(
     # two strategies for `snapshotEveryStep`: 
     # (false) use the closest snapshot, change values to the current state etc. -> might be difficult with nasty algebraic loops!
     # (true) make snapshots for every time step (more secure, more memory)
-    snapshotEveryStep = true
     pullback_snapshot = nothing
+    Ω = nothing
 
-    if snapshotEveryStep
+    if c.fmu.executionConfig.snapshot_every_step
         # capture state
         # startSampling(c)
         # tmp_snapshot = snapshot!(c)
 
-        # change, make snapshot
         Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+
         #pullback_snapshot = snapshot_if_needed!(c, t) 
         pullback_snapshot = snapshot!(c)
         
@@ -415,10 +415,19 @@ function ChainRulesCore.rrule(
         #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback separately,
         #        because they are (or might be) evaluated at different points in time during ODE solving.
         if length(c.solution.snapshots) > 0
-            sn = getSnapshot(c.solution, t)
-            if !isnothing(sn) # sometimes it is -Inf
-                apply!(c, sn)
+            sn = getPreviousSnapshot(c.solution, t)
+
+            # this is the case for t = t_0
+            if isnothing(sn)
+                sn = getSnapshot(c.solution, t)
             end
+
+            @assert !isnothing(sn) "rrule failed to find snapshot for t=$(t), only available snapshots are:\n$(collect(s.t for s in c.solution.snapshots))."
+            #if isnothing(sn)
+            #    @warn "rrule found no snapshot for t=$(t)."
+            #else
+            apply!(c, sn)
+            #end
         end
 
         Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
@@ -496,8 +505,8 @@ function ChainRulesCore.rrule(
             ēc = collect(ēc) # [ēc...]
         end
 
-        tmp_snapshot_inner = nothing
-        if snapshotEveryStep
+        #tmp_snapshot_inner = nothing
+        if c.fmu.executionConfig.snapshot_every_step
             startSampling(c)
             #tmp_snapshot_inner = snapshot!(c)
             
@@ -508,7 +517,13 @@ function ChainRulesCore.rrule(
             #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
             #        set during pullback evaluation. (discrete FMU state might change during simulation)
             if length(c.solution.snapshots) > 0 # c.t != t 
-                sn = getSnapshot(c.solution, t)
+                sn = getPreviousSnapshot(c.solution, t)
+
+                # this is the case for t = t_0
+                if isnothing(sn)
+                    sn = getSnapshot(c.solution, t)
+                end
+                
                 apply!(c, sn)
             end
 
@@ -616,7 +631,7 @@ function ChainRulesCore.rrule(
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
 
-        if snapshotEveryStep
+        if c.fmu.executionConfig.snapshot_every_step
             stopSampling(c)
             
             #apply!(c, tmp_snapshot_inner)
