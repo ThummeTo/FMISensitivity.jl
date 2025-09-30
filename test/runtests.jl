@@ -50,19 +50,18 @@ function getFMUStruct(
     end
 end
 
-@testset "FMIImport.jl" begin
+ENV["EXPORTINGTOOL"] = "Dymola"
+ENV["EXPORTINGVERSION"] = "2023x"
+ENV["FMUSTRUCT"] = "FMUCOMPONENT"
+
+@testset "FMISensitivity.jl" begin
     if Sys.iswindows() || Sys.islinux()
         @info "Automated testing is supported on Windows/Linux."
-
-        ENV["EXPORTINGTOOL"] = "Dymola"
-        ENV["EXPORTINGVERSION"] = "2023x"
 
         for fmiversion in (2.0, 3.0)
             ENV["FMIVERSION"] = fmiversion
 
             @testset "Testing FMI $(ENV["FMIVERSION"]) FMUs exported from $(ENV["EXPORTINGTOOL"]) $(ENV["EXPORTINGVERSION"])" begin
-
-                ENV["FMUSTRUCT"] = "FMUCOMPONENT"
 
                 @testset "Functions for $(ENV["FMUSTRUCT"])" begin
                     @testset "Jacobians / Gradients" begin
