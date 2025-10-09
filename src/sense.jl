@@ -440,7 +440,6 @@ function ChainRulesCore.rrule(
         # else
         #     # if no snapshots available, nothing to set here :-)
         # end
-
         
         Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
 
@@ -528,36 +527,18 @@ function ChainRulesCore.rrule(
         # end
         
         # here, we need to set the state/time/etc. to fit the instance the pullback was created!
-        if !c.fmu.executionConfig.snapshot_every_step
+        if c.fmu.executionConfig.snapshot_every_step
             # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
             #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
             #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
             #        set during pullback evaluation. (discrete FMU state might change during simulation)
-           
-            # [ToDo] Not everything is still needed (from the setters)
-            #        These lines could be replaced by an `eval!` call?
-            #        Already part of the snapshot?
 
-            # if states # && !c.fmu.isZeroState # && c.x != x 
-            #     setContinuousStates(c, x)
-            #     # todo: set discrete state as well
-            # end
-
-            # if inputs ## && c.u != u
-            #     setInputs(c, u_refs, u)
-            # end
-
-            # if parameters && c.fmu.executionConfig.set_p_every_step
-            #     setReal(c, p_refs, p)
-            # end
-
-            # if times # && c.t != t
-            #     setTime(c, t)
-            # end
-
-            # light weight call to eval!
-            FMIBase.eval_set!(c, x, u, u_refs, p, p_refs, t, x_d)
+            #startSampling(c)   
+            apply!(c, pullback_snapshot)
         end
+
+        # light weight call to eval!
+        FMIBase.eval_set!(c, x, u, u_refs, p, p_refs, t, x_d)
 
         x̄ = zeros(length(x)) #ZeroTangent()
         t̄ = zeros(1) #ZeroTangent()
@@ -659,9 +640,11 @@ function ChainRulesCore.rrule(
 
         @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\nx_d=$(x_d)\ndx=$(dx)\n(x̄=$(x̄), x̄_d=$(x̄_d), ū=$(ū), p̄=$(p̄), t̄=$(t̄))"
 
-        #stopSampling(c)
-        #apply!(c, tmp_snapshot_inner)
-        #freeSnapshot!(tmp_snapshot_inner)
+        if c.fmu.executionConfig.snapshot_every_step
+            #stopSampling(c)
+            #apply!(c, tmp_snapshot_inner)
+            freeSnapshot!(pullback_snapshot)
+        end
        
         d̄x = zeros(length(dx)) # ZeroTangent()
         ȳ = zeros(length(y)) # ZeroTangent()
