@@ -23,7 +23,7 @@ using SciMLSensitivity.LinearAlgebra
 
 using FMIBase
 using FMIBase.FMICore
-using FMIBase: undual, unsense, untrack
+using FMIBase: undual, unsense, untrack, FMUEvaluationOutput
 
 include("utils.jl")
 include("sense.jl")
