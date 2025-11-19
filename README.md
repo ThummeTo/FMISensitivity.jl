@@ -8,7 +8,7 @@
 
 ## What is FMISensitivity.jl?
 Unfortunately, FMUs ([fmi-standard.org](http://fmi-standard.org/)) are not differentiable by design. 
-To enable their full potential inside Julia, [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl) makes FMUs fully differentiable, regarding to:
+To enable their full potential inside Julia, [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl) makes FMUs fully differentiable, regarding:
 - states and derivatives
 - inputs, outputs and other observable variables
 - parameters
@@ -17,7 +17,7 @@ To enable their full potential inside Julia, [*FMISensitivity.jl*](https://githu
 - state change sensitivity by event $\partial x^{+} / \partial x^{-}$ (if paired with *FMIFlux.jl*)
 
 This opens up to many applications like:
-- FMUs in Scientific Machine Learning, for example as part of Neural(O)DEs or PINNs with [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl)
+- FMUs in Scientific Machine Learning, for example as part of Neural (O)DEs or PINNs with [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl)
 - gradient-based optimization of FMUs (typically parameters) with [*FMI.jl*](https://github.com/ThummeTo/FMIFlux.jl) (also *dynamic* optimization)
 - linearization, linear analysis and controller design
 - adding directional derivatives for existing FMUs with the power of Julia AD and [*FMIExport.jl*](https://github.com/ThummeTo/FMIExport.jl) [Tutorial is WIP]
@@ -34,7 +34,7 @@ Here, *FMISensitivity.jl* uses everything the FMI-standard and Julia currently o
 - Finite Differences (by *FiniteDiff.jl*) for FMUs that don't offer sensitivity information, as well as for special derivatives that are not part of the FMI-standard (like e.g. event-indicators or explicit time)
 - coloring based on sparsity information shipped with the FMU [WIP]
 - coloring based on sparsity detection for FMUs without sparsity information [WIP]
-- implicite differentation
+- implicit differentiation
 - ...
 
 ## How can I use FMISensitivity.jl?
@@ -63,12 +63,12 @@ To keep dependencies nice and clean, the original package [*FMI.jl*](https://git
 - [*FMIBase.jl*](https://github.com/ThummeTo/FMIBase.jl): Common concepts for import and export of FMUs
 - [*FMICore.jl*](https://github.com/ThummeTo/FMICore.jl): C-code wrapper for the FMI-standard
 - [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl): Static and dynamic sensitivities over FMUs
-- [*FMIBuild.jl*](https://github.com/ThummeTo/FMIBuild.jl): Compiler/Compilation dependencies for FMIExport.jl
+- [*FMIBuild.jl*](https://github.com/ThummeTo/FMIBuild.jl): Compiler/Compilation dependencies for *FMIExport.jl*
 - [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl): Machine Learning with FMUs
 - [*FMIZoo.jl*](https://github.com/ThummeTo/FMIZoo.jl): A collection of testing and example FMUs
 
 ## What Platforms are supported?
-[FMISensitivity.jl](https://github.com/ThummeTo/FMISensitivity.jl) is tested (and testing) under Julia Versions *1.6 LTS* and *latest* on Windows *latest* and Ubuntu *latest*. `x64` architectures are tested. Mac and x86-architectures might work, but are not tested.
+[FMISensitivity.jl](https://github.com/ThummeTo/FMISensitivity.jl) is tested (and testing) under Julia Versions *1.10 LTS* and *latest* on Windows *latest* and Ubuntu *latest*. `x64` architectures are tested. Mac and x86-architectures might work, but are not tested.
 
 ## How to cite?
 Coming soon ...
