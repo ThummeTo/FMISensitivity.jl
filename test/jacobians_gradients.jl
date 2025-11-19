@@ -34,10 +34,16 @@ y = getReal(c, y_refs)
 p_refs = fmu.modelDescription.parameterValueReferences
 p = getReal(c, p_refs)
 e = getEventIndicators(c)
-ec_idcs = collect(UInt32(i) for i in 1:fmu.modelDescription.numberOfEventIndicators)
+ec_idcs = collect(UInt32(i) for i = 1:fmu.modelDescription.numberOfEventIndicators)
 t = 0.0
 
-sampleJacobian(_f, x) = FiniteDiff.finite_difference_jacobian(_x -> [_f(_x)...], x, Val(:central); relstep=0.0, absstep=1e-4)
+sampleJacobian(_f, x) = FiniteDiff.finite_difference_jacobian(
+    _x -> [_f(_x)...],
+    x,
+    Val(:central);
+    relstep = 0.0,
+    absstep = 1e-4,
+)
 
 reset! = function (c::FMUInstance)
 
@@ -111,10 +117,14 @@ atol = 1e-3 # 1e-7
     0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0;
     0.0375 0.0 0.0 10.0 0.6 10.0 0.0 0.0 0.0 5.0 -5.25 0.0
 ]
-∂y_∂x = [-10.0 -0.05; 
-    0.0 1.0]
-∂y_∂u = [1.0; 
-    0.0]
+∂y_∂x = [
+    -10.0 -0.05;
+    0.0 1.0
+]
+∂y_∂u = [
+    1.0;
+    0.0
+]
 ∂y_∂p = [
     0.0375 0.0 0.0 10.0 0.6 10.0 0.0 0.0 0.0 5.0 -5.25 0.0;
     0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
@@ -346,7 +356,7 @@ j_smp = sampleJacobian(_f, x)
 @test isapprox(j_fwd, ∂y_∂x; atol = atol)
 @test isapprox(j_rwd, ∂y_∂x; atol = atol)
 @test CHECK_ZYGOTE ? isapprox(j_zyg, ∂y_∂x; atol = atol) : true
-@test isapprox(j_smp, ∂y_∂x; atol=atol)
+@test isapprox(j_smp, ∂y_∂x; atol = atol)
 #@test isapprox(j_get, ∂y_∂x; atol=atol)
 
 @test c.solution.evals_∂ẋ_∂x == 0
@@ -397,7 +407,7 @@ j_zyg = CHECK_ZYGOTE ? Zygote.jacobian(_f, x)[1] : nothing
 reset!(c)
 
 # Jacobian ACE=∂(dx y ec)/∂x (out-of-place)
-_f = _x -> fmu(; x = _x, dx_refs = :all, y_refs = y_refs, ec_idcs=ec_idcs).buffer
+_f = _x -> fmu(; x = _x, dx_refs = :all, y_refs = y_refs, ec_idcs = ec_idcs).buffer
 _f(x)
 j_fwd = ForwardDiff.jacobian(_f, x)
 j_rwd = ReverseDiff.jacobian(_f, x)
@@ -408,7 +418,7 @@ j_smp = sampleJacobian(_f, x)
 @test isapprox(j_fwd, vcat(∂ẋ_∂x, ∂y_∂x, ∂e_∂x); atol = atol)
 @test isapprox(j_rwd, vcat(∂ẋ_∂x, ∂y_∂x, ∂e_∂x); atol = atol)
 @test CHECK_ZYGOTE ? isapprox(j_zyg, vcat(∂ẋ_∂x, ∂y_∂x, ∂e_∂x); atol = atol) : true
-@test isapprox(j_smp, vcat(∂ẋ_∂x, ∂y_∂x, ∂e_∂x); atol=atol)
+@test isapprox(j_smp, vcat(∂ẋ_∂x, ∂y_∂x, ∂e_∂x); atol = atol)
 #@test isapprox(j_get, ∂ẋ_∂x; atol=atol)
 
 @test c.solution.evals_∂ẋ_∂x == (CHECK_ZYGOTE ? 1 : 38)
@@ -439,7 +449,7 @@ j_smp = sampleJacobian(_f, u)
 @test isapprox(j_fwd, ∂y_∂u; atol = atol)
 @test isapprox(j_rwd, ∂y_∂u; atol = atol)
 @test CHECK_ZYGOTE ? isapprox(j_zyg, ∂y_∂u; atol = atol) : true
-@test isapprox(j_smp, ∂y_∂u; atol=atol)
+@test isapprox(j_smp, ∂y_∂u; atol = atol)
 #@test isapprox(j_get, ∂y_∂u; atol=atol)
 
 @test c.solution.evals_∂ẋ_∂x == 0

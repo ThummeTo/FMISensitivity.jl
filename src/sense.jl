@@ -4,7 +4,8 @@
 #
 
 import FMIBase: eval!, invalidate!, check_invalidate!
-using FMIBase: getDirectionalDerivative!, getAdjointDerivative!, sampleDirectionalDerivative!
+using FMIBase:
+    getDirectionalDerivative!, getAdjointDerivative!, sampleDirectionalDerivative!
 using FMIBase:
     setContinuousStates,
     setInputs,
@@ -13,7 +14,10 @@ using FMIBase:
     setReal,
     getReal!,
     getEventIndicators!,
-    getRealType, startSampling, stopSampling, issense
+    getRealType,
+    startSampling,
+    stopSampling,
+    issense
 
 # in FMI2 and FMI3 we can use fmi2GetDirectionalDerivative for JVP-computations
 function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
@@ -208,7 +212,22 @@ function ChainRulesCore.frule(
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec_idcs) > 0)
 
-    Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
+    Ω = FMIBase.eval!(
+        cRef,
+        dx,
+        dx_refs,
+        y,
+        y_refs,
+        x,
+        u,
+        u_refs,
+        p,
+        p_refs,
+        ec,
+        ec_idcs,
+        t,
+        x_d,
+    )
 
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
@@ -410,12 +429,27 @@ function ChainRulesCore.rrule(
         # startSampling(c)
         # tmp_snapshot = snapshot!(c)
 
-        Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
+        Ω = FMIBase.eval!(
+            cRef,
+            dx,
+            dx_refs,
+            y,
+            y_refs,
+            x,
+            u,
+            u_refs,
+            p,
+            p_refs,
+            ec,
+            ec_idcs,
+            t,
+            x_d,
+        )
 
         # [Todo] this is wrong, discrete state may not match, bc rrule could be called after event handling for 
         # before a state before the event!
         pullback_snapshot = snapshot!(c)
-        
+
         # re-set original state to persue simulation
         # stopSampling(c)
         # apply!(c, tmp_snapshot)
@@ -435,20 +469,35 @@ function ChainRulesCore.rrule(
         #     end
 
         #     @assert !isnothing(pullback_snapshot) "rrule failed to find snapshot for t=$(t), only available snapshots are:\n$(collect(s.t for s in c.solution.snapshots))."
-            
+
         #     apply!(c, pullback_snapshot)
         # else
         #     # if no snapshots available, nothing to set here :-)
         # end
-        
-        Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
+
+        Ω = FMIBase.eval!(
+            cRef,
+            dx,
+            dx_refs,
+            y,
+            y_refs,
+            x,
+            u,
+            u_refs,
+            p,
+            p_refs,
+            ec,
+            ec_idcs,
+            t,
+            x_d,
+        )
 
         #pullback_snapshot = getSnapshot(c.solution, t)
-        
+
         # [ToDo] maybe the arrays change between pullback creation and use! check this!
         t = copy(t) # is scalar, but could be AD-primitive.
-        x = copy(x) 
-        x_d = copy(x_d) 
+        x = copy(x)
+        x_d = copy(x_d)
         p = copy(p)
         u = copy(u)
         # dx = copy(dx)
@@ -472,7 +521,7 @@ function ChainRulesCore.rrule(
         dx_refs = c.fmu.modelDescription.derivativeValueReferences
     end
     x_refs = c.fmu.modelDescription.stateValueReferences
-    
+
     function eval_pullback(r̄)
 
         @debug "eval pullback start"
@@ -501,8 +550,8 @@ function ChainRulesCore.rrule(
         # end
 
         d̄x = @view(r̄[1:dx_len])  # r̄[1:dx_len] 
-        ȳ = @view(r̄[dx_len+1:dx_len+y_len]) # r̄[dx_len+1:dx_len+y_len] 
-        ēc = @view(r̄[dx_len+y_len+1:end]) # r̄[y_len+dx_len+1:end] 
+        ȳ = @view(r̄[(dx_len+1):(dx_len+y_len)]) # r̄[dx_len+1:dx_len+y_len] 
+        ēc = @view(r̄[(dx_len+y_len+1):end]) # r̄[y_len+dx_len+1:end] 
 
         outputs = _outputs && !isZeroTangent(ȳ)
         derivatives = _derivatives && !isZeroTangent(d̄x)
@@ -525,7 +574,7 @@ function ChainRulesCore.rrule(
         # if !isnothing(pullback_snapshot)
         #     apply!(c, pullback_snapshot)
         # end
-        
+
         # here, we need to set the state/time/etc. to fit the instance the pullback was created!
         if c.fmu.executionConfig.snapshot_every_step
             # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
@@ -548,7 +597,7 @@ function ChainRulesCore.rrule(
 
         if derivatives
             if states
-                vjp!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x; accu = x̄) 
+                vjp!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x; accu = x̄)
                 c.solution.evals_∂ẋ_∂x += 1
                 #@info "t=$(t)\n\tx=$(x)\n\tx̄=$(x̄)\n\tmtx=$(c.∂ẋ_∂x.mtx)\n\tvjp=$(c.∂ẋ_∂x.vjp)\n\td̄x=$(d̄x)"
             end
@@ -645,7 +694,7 @@ function ChainRulesCore.rrule(
             #apply!(c, tmp_snapshot_inner)
             freeSnapshot!(pullback_snapshot)
         end
-       
+
         d̄x = zeros(length(dx)) # ZeroTangent()
         ȳ = zeros(length(y)) # ZeroTangent()
         ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
@@ -666,7 +715,7 @@ function ChainRulesCore.rrule(
             ēc,
             ēc_idcs,
             t̄,
-            x̄_d
+            x̄_d,
         )
     end
 
@@ -1477,8 +1526,9 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
 
     # only VR to VR value references can be sampled using built-in functions in FMI
     if !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
-        if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative && providesDirectionalDerivatives(jac.instance.fmu) 
-        
+        if jac.instance.fmu.executionConfig.sensitivity_strategy ==
+           :FMIDirectionalDerivative && providesDirectionalDerivatives(jac.instance.fmu)
+
             # ToDo: use directional derivatives with sparsitiy information!
             # ToDo: Optimize allocation (onehot)
             # [Note] Jacobian is sampled column by column
@@ -1494,8 +1544,9 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
                     view(jac.mtx, 1:rows, i),
                 )
             end
-        elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative && providesAdjointDerivatives(jac.instance.fmu) 
-            
+        elseif jac.instance.fmu.executionConfig.sensitivity_strategy ==
+               :FMIAdjointDerivative && providesAdjointDerivatives(jac.instance.fmu)
+
             # ToDo: use directional derivatives with sparsitiy information!
             # ToDo: Optimize allocation (onehot)
             # [Note] Jacobian is sampled row by row
@@ -1519,11 +1570,14 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
             #finite_diff_jacobian!(jac, x)
 
             for i = 1:cols
-                sampleDirectionalDerivative!(jac.instance,
+                sampleDirectionalDerivative!(
+                    jac.instance,
                     jac.f_refs,
                     jac.x_refs,
                     onehot!(seed, i),
-                    view(jac.mtx, 1:rows, i); Δx=jac.instance.fmu.executionConfig.finitediff_absstep)
+                    view(jac.mtx, 1:rows, i);
+                    Δx = jac.instance.fmu.executionConfig.finitediff_absstep,
+                )
             end
         else
             @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
@@ -1549,7 +1603,7 @@ function finite_diff_jacobian!(jac, x)
 
     # this is FiniteDiff default behaviour
     relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
-    absstep = relstep 
+    absstep = relstep
 
     if jac.instance.fmu.executionConfig.finitediff_relstep >= 0.0
         relstep = jac.instance.fmu.executionConfig.finitediff_relstep
@@ -1568,7 +1622,10 @@ function finite_diff_jacobian!(jac, x)
     FiniteDiff.finite_difference_jacobian!(
         jac.mtx,
         (_dx, _x) -> jac.f(jac, _dx, _x),
-        x, fdtype; relstep=relstep, absstep=absstep # 
+        x,
+        fdtype;
+        relstep = relstep,
+        absstep = absstep, # 
     ) # , cache)
 
     #jac.mtx = transpose(jac.mtx)
@@ -1592,7 +1649,7 @@ function finite_diff_gradient!(grad, x)
 
     # this is FiniteDiff default behaviour
     relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
-    absstep = relstep 
+    absstep = relstep
 
     if grad.instance.fmu.executionConfig.finitediff_relstep >= 0.0
         relstep = grad.instance.fmu.executionConfig.finitediff_relstep
@@ -1606,7 +1663,10 @@ function finite_diff_gradient!(grad, x)
     FiniteDiff.finite_difference_gradient!(
         grad.vec,
         (_dx, _x) -> (grad.f(grad, _dx, _x)),
-        x, fdtype; relstep=relstep, absstep=absstep
+        x,
+        fdtype;
+        relstep = relstep,
+        absstep = absstep,
     ) # , cache)
 
     # ... and set it afterwards
@@ -1618,12 +1678,11 @@ end
 
 function validate!(grad::FMUGradient, x::Real)
 
-    if !isa(grad.f_refs, Tuple) &&
-        !isa(grad.x_refs, Symbol)
+    if !isa(grad.f_refs, Tuple) && !isa(grad.x_refs, Symbol)
 
-        if grad.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative &&
-        providesDirectionalDerivatives(grad.instance.fmu)
-        
+        if grad.instance.fmu.executionConfig.sensitivity_strategy ==
+           :FMIDirectionalDerivative && providesDirectionalDerivatives(grad.instance.fmu)
+
             # ToDo: use directional derivatives with sparsitiy information!
             getDirectionalDerivative!(
                 grad.instance,
