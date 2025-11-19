@@ -4,7 +4,7 @@
 #
 
 import FMIBase: eval!, invalidate!, check_invalidate!
-using FMIBase: getDirectionalDerivative!, getAdjointDerivative!
+using FMIBase: getDirectionalDerivative!, getAdjointDerivative!, sampleDirectionalDerivative!
 using FMIBase:
     setContinuousStates,
     setInputs,
@@ -13,7 +13,7 @@ using FMIBase:
     setReal,
     getReal!,
     getEventIndicators!,
-    getRealType
+    getRealType, startSampling, stopSampling, issense
 
 # in FMI2 and FMI3 we can use fmi2GetDirectionalDerivative for JVP-computations
 function jvp!(c::FMUInstance, mtxCache::Symbol, ∂f_refs, ∂x_refs, x, seed; accu = nothing)
@@ -145,6 +145,7 @@ function ChainRulesCore.frule(
     ec,
     ec_idcs,
     t,
+    x_d,
 )
 
     Δself,
@@ -160,7 +161,8 @@ function ChainRulesCore.frule(
     Δp_refs,
     Δec,
     Δec_idcs,
-    Δt = Δtuple # undual ?
+    Δt,
+    Δx_d = Δtuple # undual ?
 
     @debug "frule start"
 
@@ -201,12 +203,12 @@ function ChainRulesCore.frule(
     outputs = (length(y_refs) > 0)
     inputs = (length(u_refs) > 0)
     derivatives = (length(dx) > 0)
+    times = FMIBase.isSetReal(c.fmu, t)
     states = (length(x) > 0)
-    times = (t >= 0.0)
     parameters = (length(p_refs) > 0)
     eventIndicators = (length(ec_idcs) > 0)
 
-    Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
+    Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
 
     # time, states and inputs where already set in `eval!`, no need to repeat it here
 
@@ -344,8 +346,8 @@ function ChainRulesCore.frule(
 
     # [Note] Type Real is required for AD over AD
     ∂Ω = FMUEvaluationOutput{Real}() # Float64
-    ∂Ω.y = ∂y
     ∂Ω.dx = ∂dx
+    ∂Ω.y = ∂y
     ∂Ω.ec = ∂e
 
     return Ω, ∂Ω
@@ -366,43 +368,96 @@ function ChainRulesCore.rrule(
     ec,
     ec_idcs,
     t,
+    x_d,
 )
 
     @assert !isa(cRef, FMUInstance) "Wrong dispatched!"
 
-    @debug "rrule start: $((cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t))"
+    @debug "rrule start: $((cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d))"
 
     c = unsafe_pointer_to_objref(Ptr{Nothing}(cRef))
 
     y_len = (isnothing(y_refs) ? 0 : length(y_refs))
     dx_len = (isnothing(dx) ? 0 : length(dx))
 
-    outputs = (length(y_refs) > 0)
-    inputs = (length(u_refs) > 0)
-    derivatives = (length(dx) > 0)
+    _outputs = (length(y_refs) > 0)
+    _derivatives = (length(dx) > 0)
+    _eventIndicators = (length(ec) > 0)
     states = (length(x) > 0)
-    times = (t >= 0.0)
+    inputs = (length(u_refs) > 0)
+    times = FMIBase.isSetReal(c.fmu, t)
     parameters = (length(p_refs) > 0)
-    eventIndicators = (length(ec) > 0)
+
+    @assert !issense(x_d) "discrete state sensitive!"
+
+    # x_d = []
+    # # because of single discrete state
+    # if c.fmu.isDummyDiscrete
+    #     x_d = unsense(x[end:end])
+    # end
 
     # [ToDo] remove!
     # x = unsense(x)
 
-    # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
-    #        setting the corresponding snapshot (that holds all related quantities, including the discrete state)
-    #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback separately,
-    #        because they are evaluated at different points in time during ODE solving.
-    if length(c.solution.snapshots) > 0
-        sn = getSnapshot(c.solution, t)
-        if !isnothing(sn) # sometimes it is -Inf
-            apply!(c, sn)
-        end
+    # two strategies for `snapshotEveryStep`: 
+    # (false) use the closest snapshot, change values to the current state etc. -> might be difficult with nasty algebraic loops!
+    # (true) make snapshots for every time step (more secure, more memory)
+    pullback_snapshot = nothing
+    Ω = nothing
+
+    if c.fmu.executionConfig.snapshot_every_step
+        # capture state
+        # startSampling(c)
+        # tmp_snapshot = snapshot!(c)
+
+        Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
+
+        # [Todo] this is wrong, discrete state may not match, bc rrule could be called after event handling for 
+        # before a state before the event!
+        pullback_snapshot = snapshot!(c)
+        
+        # re-set original state to persue simulation
+        # stopSampling(c)
+        # apply!(c, tmp_snapshot)
+        # freeSnapshot!(tmp_snapshot)
+    else
+        # [Note] it is mandatory to set the (unknown) discrete state of the FMU by 
+        #        setting the corresponding snapshot (that holds all related quantities, including the discrete state)
+        #        from the snapshot cache. This needs to be done for Ω, as well as for the pullback separately,
+        #        because they are (or might be) evaluated at different points in time during ODE solving.
+        # if length(c.solution.snapshots) > 0
+        #     pullback_snapshot = getSnapshotOrPrevious(c.solution, t)
+
+        #     # for discontinuous systems, this happens for ReverseDiff - whyever
+        #     if isnan(t)
+        #         pullback_snapshot = c.solution.snapshots[end]
+        #         @warn "rrule is called for t=NaN, fallback to last snapshot at t=$(pullback_snapshot.t)."
+        #     end
+
+        #     @assert !isnothing(pullback_snapshot) "rrule failed to find snapshot for t=$(t), only available snapshots are:\n$(collect(s.t for s in c.solution.snapshots))."
+            
+        #     apply!(c, pullback_snapshot)
+        # else
+        #     # if no snapshots available, nothing to set here :-)
+        # end
+        
+        Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t, x_d)
+
+        #pullback_snapshot = getSnapshot(c.solution, t)
+        
+        # [ToDo] maybe the arrays change between pullback creation and use! check this!
+        t = copy(t) # is scalar, but could be AD-primitive.
+        x = copy(x) 
+        x_d = copy(x_d) 
+        p = copy(p)
+        u = copy(u)
+        # dx = copy(dx)
+        # y = copy(y)
+        # ec = copy(ec)
     end
 
-    Ω = FMIBase.eval!(cRef, dx, dx_refs, y, y_refs, x, u, u_refs, p, p_refs, ec, ec_idcs, t)
-
     # [ToDo] remove this copy
-    Ω = copy(Ω)
+    # Ω = copy(Ω)
 
     # if t < 1.0
     #     @assert dx[2] <= 0.0 "$(dx[2]) for t=$(t)"
@@ -413,20 +468,14 @@ function ChainRulesCore.rrule(
 
     ##############
 
-    # [ToDo] maybe the arrays change between pullback creation and use! check this!
-    x = copy(x)
-    p = copy(p)
-    u = copy(u)
-    # dx = copy(dx)
-    # y = copy(y)
-    # ec = copy(ec)
-
     if dx_len > 0 && length(dx_refs) == 0 # all derivatives, please!
         dx_refs = c.fmu.modelDescription.derivativeValueReferences
     end
     x_refs = c.fmu.modelDescription.stateValueReferences
-
+    
     function eval_pullback(r̄)
+
+        @debug "eval pullback start"
 
         #println("$(t),")
 
@@ -451,13 +500,13 @@ function ChainRulesCore.rrule(
         #     end
         # end
 
-        d̄x = @view(r̄[y_len+1:y_len+dx_len]) # r̄[1:dx_len] 
-        ȳ = @view(r̄[1:y_len]) # r̄[dx_len+1:dx_len+y_len] 
-        ēc = @view(r̄[y_len+dx_len+1:end]) # r̄[y_len+dx_len+1:end] 
+        d̄x = @view(r̄[1:dx_len])  # r̄[1:dx_len] 
+        ȳ = @view(r̄[dx_len+1:dx_len+y_len]) # r̄[dx_len+1:dx_len+y_len] 
+        ēc = @view(r̄[dx_len+y_len+1:end]) # r̄[y_len+dx_len+1:end] 
 
-        outputs = outputs && !isZeroTangent(ȳ)
-        derivatives = derivatives && !isZeroTangent(d̄x)
-        eventIndicators = eventIndicators && !isZeroTangent(ēc)
+        outputs = _outputs && !isZeroTangent(ȳ)
+        derivatives = _derivatives && !isZeroTangent(d̄x)
+        eventIndicators = _eventIndicators && !isZeroTangent(ēc)
 
         if !isa(ȳ, AbstractArray)
             ȳ = collect(ȳ) # [ȳ...]
@@ -471,42 +520,37 @@ function ChainRulesCore.rrule(
             ēc = collect(ēc) # [ēc...]
         end
 
-        # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
-        #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
-        #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
-        #        set during pullback evaluation. (discrete FMU state might change during simulation)
-        if length(c.solution.snapshots) > 0 # c.t != t 
-            sn = getSnapshot(c.solution, t)
-            apply!(c, sn)
+        # ToDo: Is sampling actually required here?
+        #startSampling(c)   
+        # if !isnothing(pullback_snapshot)
+        #     apply!(c, pullback_snapshot)
+        # end
+        
+        # here, we need to set the state/time/etc. to fit the instance the pullback was created!
+        if c.fmu.executionConfig.snapshot_every_step
+            # [NOTE] for construction of the gradient/jacobian over an ODE solution, many different pullbacks are requested 
+            #        and chained together. At the time of creation of the pullback, it is not known which jacobians are needed.
+            #        Therefore for correct sensitivities, the FMU state must be captured during simulation and 
+            #        set during pullback evaluation. (discrete FMU state might change during simulation)
+
+            #startSampling(c)   
+            apply!(c, pullback_snapshot)
         end
 
-        # [ToDo] Not everything is still needed (from the setters)
-        #        These lines could be replaced by an `eval!` call?
-        if states && !c.fmu.isZeroState # && c.x != x 
-            setContinuousStates(c, x)
-        end
-
-        if inputs ## && c.u != u
-            setInputs(c, u_refs, u)
-        end
-
-        if parameters && c.fmu.executionConfig.set_p_every_step
-            setReal(c, p_refs, p)
-        end
-
-        if times # && c.t != t
-            setTime(c, t)
-        end
+        # light weight call to eval!
+        FMIBase.eval_set!(c, x, u, u_refs, p, p_refs, t, x_d)
 
         x̄ = zeros(length(x)) #ZeroTangent()
         t̄ = zeros(1) #ZeroTangent()
         ū = zeros(length(u)) #ZeroTangent()
-        p̄ = zeros(length(p)) #eroTangent()
+        p̄ = zeros(length(p)) #ZeroTangent()
+        x̄_d = zeros(length(x_d)) # ZeroTangent()
 
         if derivatives
             if states
-                vjp!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x; accu = x̄)
+                vjp!(c, :∂ẋ_∂x, dx_refs, x_refs, x, d̄x; accu = x̄) 
                 c.solution.evals_∂ẋ_∂x += 1
+                #@info "t=$(t)\n\tx=$(x)\n\tx̄=$(x̄)\n\tmtx=$(c.∂ẋ_∂x.mtx)\n\tvjp=$(c.∂ẋ_∂x.vjp)\n\td̄x=$(d̄x)"
             end
 
             if inputs
@@ -547,10 +591,22 @@ function ChainRulesCore.rrule(
             end
         end
 
-        if eventIndicators
+        # if sum(abs.(ēc)) > 0
+        #     @info "t=$(t)\nēc=$(ēc)"
+        # end
+
+        # if sum(abs.(d̄x)) > 0
+        #     @info "t=$(t)\nd̄x=$(d̄x)"
+        # end
+
+        #@info "$(_eventIndicators) | $(states)"
+
+        if _eventIndicators # ToDo: This should be `eventIndicators` but we get it for every ēc bc. of workaround in `condition!`
             if states
                 vjp!(c, :∂e_∂x, (:indicators, ec_idcs), x_refs, x, ēc; accu = x̄)
                 c.solution.evals_∂e_∂x += 1
+
+                #@info "t=$(t)\nēc=$(ēc)"
             end
 
             if inputs
@@ -561,6 +617,8 @@ function ChainRulesCore.rrule(
             if parameters
                 vjp!(c, :∂e_∂p, (:indicators, ec_idcs), p_refs, p, ēc; accu = p̄)
                 c.solution.evals_∂e_∂p += 1
+
+                #@info "t=$(t)\nēc=$(ēc)"
             end
 
             if times && c.fmu.executionConfig.eval_t_gradients
@@ -578,12 +636,19 @@ function ChainRulesCore.rrule(
         ū_refs = [] # ZeroTangent()
         p̄_refs = [] # ZeroTangent()
 
+        t̄ = t̄[1]
+
+        @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\nx_d=$(x_d)\ndx=$(dx)\n(x̄=$(x̄), x̄_d=$(x̄_d), ū=$(ū), p̄=$(p̄), t̄=$(t̄))"
+
+        if c.fmu.executionConfig.snapshot_every_step
+            #stopSampling(c)
+            #apply!(c, tmp_snapshot_inner)
+            freeSnapshot!(pullback_snapshot)
+        end
+       
         d̄x = zeros(length(dx)) # ZeroTangent()
         ȳ = zeros(length(y)) # ZeroTangent()
         ēc = zeros(length(ec)) # ZeroTangent() # copy(ec) # 
-        t̄ = t̄[1]
-
-        @debug "pullback on d̄x, ȳ, ēc = $(d̄x), $(ȳ), $(ēc)\nt= $(t)s\nx=$(x)\ndx=$(dx)\n$((x̄, ū, p̄, t̄))"
 
         # [ToDo] This needs to be a tuple... but this prevents pre-allocation...
         return (
@@ -601,6 +666,7 @@ function ChainRulesCore.rrule(
             ēc,
             ēc_idcs,
             t̄,
+            x̄_d
         )
     end
 
@@ -624,6 +690,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -640,6 +707,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # dx, y, x, u, t
@@ -657,6 +725,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -673,6 +742,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, u
@@ -690,6 +760,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -706,6 +777,42 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
+)
+
+# x, u, t
+@ForwardDiff_frule FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmiValueReference},
+    y::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:fmiValueReference},
+    x::AbstractVector{<:ForwardDiff.Dual},
+    u::AbstractVector{<:ForwardDiff.Dual},
+    u_refs::AbstractVector{<:fmiValueReference},
+    p::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:fmiValueReference},
+    ec::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmiValueReference},
+    t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
+)
+
+@grad_from_chainrules FMIBase.eval!(
+    cRef::UInt64,
+    dx::AbstractVector{<:Real},
+    dx_refs::AbstractVector{<:fmiValueReference},
+    y::AbstractVector{<:Real},
+    y_refs::AbstractVector{<:UInt32},
+    x::AbstractVector{<:ReverseDiff.TrackedReal},
+    u::AbstractVector{<:ReverseDiff.TrackedReal},
+    u_refs::AbstractVector{<:UInt32},
+    p::AbstractVector{<:Real},
+    p_refs::AbstractVector{<:UInt32},
+    ec::AbstractVector{<:Real},
+    ec_idcs::AbstractVector{<:fmiValueReference},
+    t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, p
@@ -723,6 +830,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -739,6 +847,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # t
@@ -756,6 +865,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -772,6 +882,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x
@@ -789,6 +900,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -805,6 +917,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # u
@@ -822,6 +935,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -838,6 +952,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # p
@@ -855,6 +970,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -871,6 +987,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # ec
@@ -888,6 +1005,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -904,6 +1022,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, t
@@ -921,6 +1040,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -937,6 +1057,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, ec, t
@@ -954,6 +1075,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -970,6 +1092,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # ec, t
@@ -987,6 +1110,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -1003,6 +1127,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, ec
@@ -1020,6 +1145,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -1036,6 +1162,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, p, t
@@ -1053,6 +1180,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -1069,6 +1197,7 @@ end
     ec::AbstractVector{<:Real},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, p, ec, t
@@ -1086,6 +1215,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ForwardDiff.Dual,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -1102,6 +1232,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::ReverseDiff.TrackedReal,
+    x_d::AbstractVector{<:Real},
 )
 
 # x, p, ec
@@ -1119,6 +1250,7 @@ end
     ec::AbstractVector{<:ForwardDiff.Dual},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 @grad_from_chainrules FMIBase.eval!(
@@ -1135,6 +1267,7 @@ end
     ec::AbstractVector{<:ReverseDiff.TrackedReal},
     ec_idcs::AbstractVector{<:fmiValueReference},
     t::Real,
+    x_d::AbstractVector{<:Real},
 )
 
 # FiniteDiff Jacobians
@@ -1277,28 +1410,30 @@ mutable struct FMUGradient{C,T,F} <: FMUSensitivities
 
 end
 
-function f_∂v_∂v(jac::FMUJacobian, dx, x)
+function f_∂v_∂v(jac::FMUJacobian, f, x)
     setReal(jac.instance, jac.x_refs, x; track = false)
-    getReal!(jac.instance, jac.f_refs, dx)
-    return dx
+    getReal!(jac.instance, jac.f_refs, f)
+    return f
 end
 
-function f_∂e_∂v(jac::FMUJacobian, dx, x)
+function f_∂e_∂v(jac::FMUJacobian, f, x)
+    symbol, f_refs = jac.f_refs
+    @assert symbol == :indicators "Called `f_∂e_∂v` but f_refs is not in event indicator shape."
     setReal(jac.instance, jac.x_refs, x; track = false)
-    getEventIndicators!(jac.instance, dx, jac.f_refs[2])
-    return dx
+    getEventIndicators!(jac.instance, f, f_refs)
+    return f
 end
 
-function f_∂e_∂t(jac::FMUGradient, dx, x)
+function f_∂e_∂t(jac::FMUGradient, f, x)
     setTime(jac.instance, x; track = false)
-    getEventIndicators!(jac.instance, dx, jac.f_refs[2])
-    return dx
+    getEventIndicators!(jac.instance, f, jac.f_refs[2])
+    return f
 end
 
-function f_∂v_∂t(jac::FMUGradient, dx, x)
+function f_∂v_∂t(jac::FMUGradient, f, x)
     setTime(jac.instance, x; track = false)
-    getReal!(jac.instance, jac.f_refs, dx)
-    return dx
+    getReal!(jac.instance, jac.f_refs, f)
+    return f
 end
 
 function FMIBase.invalidate!(sens::FMUSensitivities)
@@ -1340,53 +1475,61 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
     rows = length(jac.f_refs)
     cols = length(jac.x_refs)
 
-    if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative &&
-       providesDirectionalDerivatives(jac.instance.fmu) &&
-       !isa(jac.f_refs, Tuple) &&
-       !isa(jac.x_refs, Symbol)
-        # ToDo: use directional derivatives with sparsitiy information!
-        # ToDo: Optimize allocation (onehot)
-        # [Note] Jacobian is sampled column by column
+    # only VR to VR value references can be sampled using built-in functions in FMI
+    if !isa(jac.f_refs, Tuple) && !isa(jac.x_refs, Symbol)
+        if jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative && providesDirectionalDerivatives(jac.instance.fmu) 
+        
+            # ToDo: use directional derivatives with sparsitiy information!
+            # ToDo: Optimize allocation (onehot)
+            # [Note] Jacobian is sampled column by column
 
-        seed = zeros(getRealType(jac.instance), cols)
+            seed = zeros(getRealType(jac.instance), cols)
 
-        for i = 1:cols
-            getDirectionalDerivative!(
-                jac.instance,
-                jac.f_refs,
-                jac.x_refs,
-                onehot!(seed, i),
-                view(jac.mtx, 1:rows, i),
-            )
+            for i = 1:cols
+                status = getDirectionalDerivative!(
+                    jac.instance,
+                    jac.f_refs,
+                    jac.x_refs,
+                    onehot!(seed, i),
+                    view(jac.mtx, 1:rows, i),
+                )
+            end
+        elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative && providesAdjointDerivatives(jac.instance.fmu) 
+            
+            # ToDo: use directional derivatives with sparsitiy information!
+            # ToDo: Optimize allocation (onehot)
+            # [Note] Jacobian is sampled row by row
+
+            seed = zeros(getRealType(jac.instance), rows)
+
+            for i = 1:rows
+                getAdjointDerivative!(
+                    jac.instance,
+                    jac.f_refs,
+                    jac.x_refs,
+                    onehot!(seed, i),
+                    view(jac.mtx, 1:cols, i),
+                )
+            end
+        elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
+
+            seed = zeros(getRealType(jac.instance), cols)
+
+            # ToDo: also use FiniteDiff here!
+            #finite_diff_jacobian!(jac, x)
+
+            for i = 1:cols
+                sampleDirectionalDerivative!(jac.instance,
+                    jac.f_refs,
+                    jac.x_refs,
+                    onehot!(seed, i),
+                    view(jac.mtx, 1:rows, i); Δx=jac.instance.fmu.executionConfig.finitediff_absstep)
+            end
+        else
+            @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
         end
-    elseif jac.instance.fmu.executionConfig.sensitivity_strategy == :FMIAdjointDerivative &&
-           providesAdjointDerivatives(jac.instance.fmu) &&
-           !isa(jac.f_refs, Tuple) &&
-           !isa(jac.x_refs, Symbol)
-        # ToDo: use directional derivatives with sparsitiy information!
-        # ToDo: Optimize allocation (onehot)
-        # [Note] Jacobian is sampled row by row
-
-        seed = zeros(getRealType(jac.instance), rows)
-
-        for i = 1:rows
-            getAdjointDerivative!(
-                jac.instance,
-                jac.f_refs,
-                jac.x_refs,
-                onehot!(seed, i),
-                view(jac.mtx, 1:cols, i),
-            )
-        end
-    else #if jac.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
-        # cache = FiniteDiff.JacobianCache(x)
-        FiniteDiff.finite_difference_jacobian!(
-            jac.mtx,
-            (_x, _dx) -> (jac.f(jac, _x, _dx)),
-            x,
-        ) # , cache)
-        # else
-        #     @assert false "Unknown sensitivity strategy `$(jac.instance.fmu.executionConfig.sensitivity_strategy)`."
+    else
+        finite_diff_jacobian!(jac, x)
     end
 
     jac.validations += 1
@@ -1394,28 +1537,108 @@ function validate!(jac::FMUJacobian, x::AbstractVector)
     return nothing
 end
 
+function finite_diff_jacobian!(jac, x)
+
+    # FMUs remember their state, therefore me need to check the state before sampling ...
+    if !isa(jac.x_refs, Symbol)
+        x_old = FMIBase.getReal(jac.instance, jac.x_refs)
+    end
+
+    # cache = FiniteDiff.JacobianCache(x)
+    fdtype = jac.instance.fmu.executionConfig.finitediff_fdtype
+
+    # this is FiniteDiff default behaviour
+    relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
+    absstep = relstep 
+
+    if jac.instance.fmu.executionConfig.finitediff_relstep >= 0.0
+        relstep = jac.instance.fmu.executionConfig.finitediff_relstep
+    end
+
+    if jac.instance.fmu.executionConfig.finitediff_absstep >= 0.0
+        absstep = jac.instance.fmu.executionConfig.finitediff_absstep
+    end
+
+    #@info "x: $(x)"
+    #@info "size(jac.mtx): $(size(jac.mtx))"
+
+    #jac.mtx = transpose(jac.mtx)
+
+    # ToDo: for setting `fdtype`, a weird error message is generated (looks like a different sampling pattern)
+    FiniteDiff.finite_difference_jacobian!(
+        jac.mtx,
+        (_dx, _x) -> jac.f(jac, _dx, _x),
+        x, fdtype; relstep=relstep, absstep=absstep # 
+    ) # , cache)
+
+    #jac.mtx = transpose(jac.mtx)
+
+    # ... and set it afterwards
+    if !isa(jac.x_refs, Symbol)
+        FMIBase.setReal(jac.instance, jac.x_refs, x_old)
+    end
+    return nothing
+end
+
+function finite_diff_gradient!(grad, x)
+
+    # FMUs remember their state, therefore me need to check the state before sampling ...
+    if !isa(grad.x_refs, Symbol)
+        x_old = FMIBase.getReal(grad.instance, grad.x_refs)
+    end
+
+    # cache = FiniteDiff.JacobianCache(x)
+    fdtype = grad.instance.fmu.executionConfig.finitediff_fdtype
+
+    # this is FiniteDiff default behaviour
+    relstep = FiniteDiff.default_relstep(fdtype, eltype(x))
+    absstep = relstep 
+
+    if grad.instance.fmu.executionConfig.finitediff_relstep >= 0.0
+        relstep = grad.instance.fmu.executionConfig.finitediff_relstep
+    end
+
+    if grad.instance.fmu.executionConfig.finitediff_absstep >= 0.0
+        absstep = grad.instance.fmu.executionConfig.finitediff_absstep
+    end
+
+    # cache = FiniteDiff.GradientCache(x)
+    FiniteDiff.finite_difference_gradient!(
+        grad.vec,
+        (_dx, _x) -> (grad.f(grad, _dx, _x)),
+        x, fdtype; relstep=relstep, absstep=absstep
+    ) # , cache)
+
+    # ... and set it afterwards
+    if !isa(grad.x_refs, Symbol)
+        FMIBase.setReal(grad.instance, grad.x_refs, x_old)
+    end
+    return nothing
+end
+
 function validate!(grad::FMUGradient, x::Real)
 
-    if grad.instance.fmu.executionConfig.sensitivity_strategy ==
-       :FMIDirectionalDerivative &&
-       providesDirectionalDerivatives(grad.instance.fmu) &&
-       !isa(grad.f_refs, Tuple) &&
-       !isa(grad.x_refs, Symbol)
-        # ToDo: use directional derivatives with sparsitiy information!
-        getDirectionalDerivative!(
-            grad.instance,
-            grad.f_refs,
-            grad.x_refs,
-            ones(length(jac.f_refs)),
-            grad.vec,
-        )
-    else #if grad.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
-        # cache = FiniteDiff.GradientCache(x)
-        FiniteDiff.finite_difference_gradient!(
-            grad.vec,
-            (_x, _dx) -> (grad.f(grad, _x, _dx)),
-            x,
-        ) # , cache)
+    if !isa(grad.f_refs, Tuple) &&
+        !isa(grad.x_refs, Symbol)
+
+        if grad.instance.fmu.executionConfig.sensitivity_strategy == :FMIDirectionalDerivative &&
+        providesDirectionalDerivatives(grad.instance.fmu)
+        
+            # ToDo: use directional derivatives with sparsitiy information!
+            getDirectionalDerivative!(
+                grad.instance,
+                grad.f_refs,
+                grad.x_refs,
+                ones(length(jac.f_refs)),
+                grad.vec,
+            )
+        elseif grad.instance.fmu.executionConfig.sensitivity_strategy == :FiniteDiff
+            finite_diff_gradient!(grad, x)
+        else
+            @assert false "Unknown sensitivity strategy `$(grad.instance.fmu.executionConfig.sensitivity_strategy)`."
+        end
+    else
+        finite_diff_gradient!(grad, x)
     end
 
     grad.validations += 1
@@ -1477,9 +1700,9 @@ end
 function update!(gra::FMUGradient, x)
 
     if length(gra.vec) != ref_length(gra.f_refs)
-        gra.vec = similar(gra.vec, ref_length(jac.f_refs))
-        gra.gvp = similar(gra.gvp, ref_length(jac.f_refs))
-        gra.vgp = similar(gra.vgp, ref_length(jac.x_refs))
+        gra.vec = similar(gra.vec, ref_length(gra.f_refs))
+        gra.gvp = similar(gra.gvp, ref_length(gra.f_refs))
+        gra.vgp = similar(gra.vgp, ref_length(gra.x_refs))
 
         gra.valid = false
     end

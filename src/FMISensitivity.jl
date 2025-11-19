@@ -20,7 +20,6 @@ using ForwardDiffChainRules: @ForwardDiff_frule
 using SciMLSensitivity.ReverseDiff: @grad_from_chainrules
 
 using SciMLSensitivity.LinearAlgebra
-import SciMLSensitivity.SparseDiffTools
 
 using FMIBase
 using FMIBase.FMICore
